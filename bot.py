@@ -9,8 +9,15 @@ from telegram.ext import (
     filters,
 )
 
-from storage import init_db, add_plant, list_plants, rename_plant, archive_plant
-
+from storage import (
+    init_db,
+    add_plant,
+    list_plants,
+    rename_plant,
+    archive_plant,
+    count_plants,
+    db_fingerprint,
+)
 
 # ------------------ States ------------------
 ADD_ASK_NAME = 1
@@ -22,7 +29,6 @@ DEL_PICK = 20
 
 
 def _format_plants(rows):
-    # rows: [(id, name), ...]
     return "\n".join([f"{i+1}. {name}" for i, (_, name) in enumerate(rows)])
 
 
@@ -33,8 +39,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/plants — показать список растений\n"
         "/rename_plant — переименовать растение\n"
         "/delete_plant — удалить (архивировать) растение\n"
+        "/db — диагностика базы\n"
         "/cancel — отмена"
     )
+
+
+# ------------------ /db (diagnostic) ------------------
+async def db_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    try:
+        n = count_plants(user_id)
+        fp = db_fingerprint()
+        await update.message.reply_text(f"DB OK ✅ plants for you: {n}\nDB: {fp}")
+    except Exception as e:
+        await update.message.reply_text(f"DB ERROR ❌ {type(e).__name__}: {e}")
 
 
 # ------------------ /plants ------------------
@@ -80,7 +98,7 @@ async def rename_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await update.message.reply_text("Список пуст. Добавь растение: /add_plant")
         return ConversationHandler.END
 
-    context.user_data["rename_rows"] = rows  # сохранить соответствие номер -> plant_id
+    context.user_data["rename_rows"] = rows
     await update.message.reply_text(
         "Что переименовать? Ответь номером:\n" + _format_plants(rows)
     )
@@ -114,10 +132,10 @@ async def rename_new_name(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return REN_NEW_NAME
 
     user_id = update.effective_user.id
-    plant_id = context.user_data.get("rename_plant_id")
+    plant_id = int(context.user_data.get("rename_plant_id"))
     old_name = context.user_data.get("rename_old_name")
 
-    ok = rename_plant(user_id, int(plant_id), new_name)
+    ok = rename_plant(user_id, plant_id, new_name)
     if not ok:
         await update.message.reply_text(
             "Не получилось переименовать. Возможно такое имя уже есть или растение не найдено.\n"
@@ -185,17 +203,19 @@ def main() -> None:
     url_path = "webhook"
     webhook_url = f"{base_url}/{url_path}"
 
-    # init DB
+    # init DB (creates tables in Neon)
     init_db()
 
     async def post_init(app: Application) -> None:
         await app.bot.set_webhook(url=webhook_url)
         print("WEBHOOK SET TO:", webhook_url)
+        print("PORT:", port)
 
     app = Application.builder().token(token).post_init(post_init).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("plants", plants_cmd))
+    app.add_handler(CommandHandler("db", db_cmd))
 
     add_conv = ConversationHandler(
         entry_points=[CommandHandler("add_plant", add_plant_cmd)],
