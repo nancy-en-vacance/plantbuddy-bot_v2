@@ -10,7 +10,7 @@ def main() -> None:
     base_url = os.environ["BASE_URL"].rstrip("/")
     port = int(os.environ.get("PORT", "10000"))
 
-    url_path = f"webhook/{token}"
+    url_path = "webhook"
 
     app = Application.builder().token(token).build()
     app.add_handler(CommandHandler("start", start))
