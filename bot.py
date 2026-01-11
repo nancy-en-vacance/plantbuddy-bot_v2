@@ -15,6 +15,11 @@ def main() -> None:
     app = Application.builder().token(token).build()
     app.add_handler(CommandHandler("start", start))
 
+print("BOOT OK")
+print("BASE_URL =", base_url)
+print("WEBHOOK_URL =", f"{base_url}/{url_path}")
+print("PORT =", port)
+    
     app.run_webhook(
         listen="0.0.0.0",
         port=port,
