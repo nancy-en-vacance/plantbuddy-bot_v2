@@ -93,3 +93,9 @@ def restore_plant(user_id: int, plant_id: int) -> bool:
             (user_id, plant_id),
         )
     return cur.rowcount == 1
+
+def count_plants(user_id: int) -> int:
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM plants WHERE user_id = %s;", (user_id,))
+            return int(cur.fetchone()[0])
