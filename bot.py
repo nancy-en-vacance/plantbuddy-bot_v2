@@ -1,6 +1,4 @@
 import os
-from typing import Dict, List
-
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -11,23 +9,41 @@ from telegram.ext import (
     filters,
 )
 
-# -------- In-memory storage (пока без БД) --------
-PLANTS: Dict[int, List[str]] = {}  # user_id -> [plant names]
-
-
-def _get_user_plants(user_id: int) -> List[str]:
-    return PLANTS.setdefault(user_id, [])
+from storage import init_db, get_conn
 
 
 # -------- /add_plant conversation --------
 ASK_NAME = 1
 
 
+def add_plant(user_id: int, name: str) -> bool:
+    """Returns True if inserted, False if already exists or any insert error."""
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                "INSERT INTO plants (user_id, name) VALUES (?, ?)",
+                (user_id, name),
+            )
+        return True
+    except Exception:
+        return False
+
+
+def list_plants(user_id: int):
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT name FROM plants WHERE user_id = ? ORDER BY id",
+            (user_id,),
+        ).fetchall()
+    return [r[0] for r in rows]
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "Я живой ✅\n\nКоманды:\n"
         "/add_plant — добавить растение\n"
-        "/plants — показать список растений"
+        "/plants — показать список растений\n"
+        "/cancel — отменить добавление"
     )
 
 
@@ -43,14 +59,12 @@ async def add_plant_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return ASK_NAME
 
     user_id = update.effective_user.id
-    plants = _get_user_plants(user_id)
+    ok = add_plant(user_id, name)
 
-    # простая защита от дублей по точному совпадению
-    if name in plants:
-        await update.message.reply_text(f"У тебя уже есть «{name}». Хочешь другое имя?")
+    if not ok:
+        await update.message.reply_text(f"«{name}» уже есть. Хочешь другое имя?")
         return ASK_NAME
 
-    plants.append(name)
     await update.message.reply_text(f"Добавлено 🌱: {name}\n\nПосмотреть список: /plants")
     return ConversationHandler.END
 
@@ -62,7 +76,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def plants_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
-    plants = _get_user_plants(user_id)
+    plants = list_plants(user_id)
 
     if not plants:
         await update.message.reply_text("Список пуст. Добавь первое растение: /add_plant")
@@ -79,6 +93,9 @@ def main() -> None:
 
     url_path = "webhook"
     webhook_url = f"{base_url}/{url_path}"
+
+    # init sqlite
+    init_db()
 
     async def post_init(app: Application) -> None:
         await app.bot.set_webhook(url=webhook_url)
