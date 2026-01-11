@@ -1,5 +1,5 @@
 import os
-from telegram import Update, Bot
+from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 
@@ -15,12 +15,16 @@ def main() -> None:
     url_path = "webhook"
     webhook_url = f"{base_url}/{url_path}"
 
-    # принудительно ставим webhook при каждом запуске (без сюрпризов после redeploy)
-    Bot(token).set_webhook(url=webhook_url)
-    print("WEBHOOK SET TO:", webhook_url)
-    print("PORT:", port)
+    async def post_init(app: Application) -> None:
+        await app.bot.set_webhook(url=webhook_url)
 
-    app = Application.builder().token(token).build()
+    app = (
+        Application.builder()
+        .token(token)
+        .post_init(post_init)
+        .build()
+    )
+
     app.add_handler(CommandHandler("start", start))
 
     app.run_webhook(
