@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timezone
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -14,9 +15,11 @@ from storage import (
     add_plant,
     list_plants,
     list_plants_with_norms,
+    list_plants_with_last_watered,
     rename_plant,
     archive_plant,
     set_norm_days,
+    mark_watered,
     count_plants,
 )
 
@@ -31,13 +34,14 @@ DEL_PICK = 20
 NORM_PICK = 30
 NORM_DAYS = 31
 
+WATER_PICK = 40  # "1,3,5" etc.
+
 
 def _format_plants(rows):
     return "\n".join([f"{i+1}. {name}" for i, (_, name) in enumerate(rows)])
 
 
 def _format_norms(rows):
-    # rows: [(id, name, every_days)]
     lines = []
     for i, (_, name, every) in enumerate(rows):
         if every is None:
@@ -45,6 +49,46 @@ def _format_norms(rows):
         else:
             lines.append(f"{i+1}. {name} — раз в {every} дн.")
     return "\n".join(lines)
+
+
+def _format_last_watered(rows):
+    # rows: [(id, name, last_watered_at)]
+    now = datetime.now(timezone.utc)
+    lines = []
+    for i, (_, name, last) in enumerate(rows):
+        if last is None:
+            lines.append(f"{i+1}. {name} — ещё не отмечали")
+        else:
+            # last can be naive/aware depending on driver; normalize
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            days_ago = (now - last).days
+            dt = last.astimezone(timezone.utc).strftime("%Y-%m-%d")
+            lines.append(f"{i+1}. {name} — {dt} ({days_ago} дн. назад)")
+    return "\n".join(lines)
+
+
+def _parse_selection(text: str, max_n: int) -> list[int]:
+    """
+    Парсит '1,3, 5' -> [1,3,5] (1-based indices), фильтрует дубли, проверяет диапазон.
+    Возвращает список индексов (0-based) или [] если невалидно.
+    """
+    raw = text.replace(" ", "")
+    if not raw:
+        return []
+    parts = raw.split(",")
+    out = []
+    seen = set()
+    for p in parts:
+        if not p.isdigit():
+            return []
+        n = int(p)
+        if n < 1 or n > max_n:
+            return []
+        if n not in seen:
+            seen.add(n)
+            out.append(n - 1)
+    return out
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -56,6 +100,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/delete_plant — удалить (архивировать) растение\n"
         "/set_norms — задать норму полива (раз в N дней)\n"
         "/norms — показать нормы\n"
+        "/water — отметить полив (можно несколько)\n"
+        "/last_watered — показать последний полив\n"
         "/db — диагностика базы\n"
         "/cancel — отмена"
     )
@@ -93,6 +139,18 @@ async def norms_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     await update.message.reply_text("Нормы полива:\n" + _format_norms(rows))
+
+
+# ------------------ /last_watered ------------------
+async def last_watered_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    rows = list_plants_with_last_watered(user_id, active_only=True)
+
+    if not rows:
+        await update.message.reply_text("Список пуст. Добавь растение: /add_plant")
+        return
+
+    await update.message.reply_text("Последний полив:\n" + _format_last_watered(rows))
 
 
 # ------------------ /add_plant ------------------
@@ -271,6 +329,48 @@ async def norm_days(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 
+# ------------------ /water (multi select) ------------------
+async def water_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.effective_user.id
+    rows = list_plants(user_id, active_only=True)
+
+    if not rows:
+        await update.message.reply_text("Список пуст. Добавь растение: /add_plant")
+        return ConversationHandler.END
+
+    context.user_data["water_rows"] = rows
+    await update.message.reply_text(
+        "Какие растения ты полила? Можно несколько через запятую.\n"
+        "Например: 1,3,5\n\n"
+        + _format_plants(rows)
+    )
+    return WATER_PICK
+
+
+async def water_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    rows = context.user_data.get("water_rows") or []
+    text = (update.message.text or "").strip()
+
+    idxs = _parse_selection(text, max_n=len(rows))
+    if not idxs:
+        await update.message.reply_text("Не поняла. Введи номера через запятую (например: 2,4).")
+        return WATER_PICK
+
+    plant_ids = [int(rows[i][0]) for i in idxs]
+    user_id = update.effective_user.id
+
+    updated = mark_watered(user_id, plant_ids)
+    if updated == 0:
+        await update.message.reply_text("Не смогла отметить полив (попробуй ещё раз: /water).")
+        return ConversationHandler.END
+
+    names = [rows[i][1] for i in idxs]
+    await update.message.reply_text(
+        "Отметила полив ✅\n" + "\n".join([f"• {n}" for n in names]) + "\n\n/last_watered"
+    )
+    return ConversationHandler.END
+
+
 # ------------------ cancel ------------------
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("Ок, отмена.")
@@ -297,6 +397,7 @@ def main() -> None:
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("plants", plants_cmd))
     app.add_handler(CommandHandler("norms", norms_cmd))
+    app.add_handler(CommandHandler("last_watered", last_watered_cmd))
     app.add_handler(CommandHandler("db", db_cmd))
 
     add_conv = ConversationHandler(
@@ -332,6 +433,13 @@ def main() -> None:
         fallbacks=[CommandHandler("cancel", cancel)],
     )
     app.add_handler(norms_conv)
+
+    water_conv = ConversationHandler(
+        entry_points=[CommandHandler("water", water_cmd)],
+        states={WATER_PICK: [MessageHandler(filters.TEXT & ~filters.COMMAND, water_pick)]},
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+    app.add_handler(water_conv)
 
     app.run_webhook(
         listen="0.0.0.0",
