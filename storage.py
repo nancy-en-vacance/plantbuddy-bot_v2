@@ -1,6 +1,6 @@
 import os
 from typing import List, Tuple, Optional
-from datetime import datetime, timezone, date
+from datetime import datetime, timedelta, timezone
 import psycopg
 
 DATABASE_URL = os.environ["DATABASE_URL"]
@@ -27,50 +27,49 @@ def init_db() -> None:
                 );
                 """
             )
-
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS water_logs (
-                    id BIGSERIAL PRIMARY KEY,
-                    user_id BIGINT NOT NULL,
-                    plant_id BIGINT NOT NULL REFERENCES plants(id) ON DELETE CASCADE,
-                    watered_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                );
-                """
-            )
         conn.commit()
 
 
-# ---------- helpers ----------
-def list_plants(user_id: int) -> List[Tuple[int, str]]:
+def list_plants_today(user_id: int):
+    """
+    Возвращает кортежи списков:
+    overdue, today, upcoming, unknown
+    """
+    now = datetime.now(timezone.utc).date()
+
+    overdue = []
+    today = []
+    upcoming = []
+    unknown = []
+
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, name FROM plants WHERE user_id=%s AND active=TRUE ORDER BY id;",
+                """
+                SELECT name, water_every_days, last_watered_at
+                FROM plants
+                WHERE user_id=%s AND active=TRUE
+                ORDER BY name
+                """,
                 (user_id,),
             )
-            return [(int(r[0]), r[1]) for r in cur.fetchall()]
 
+            rows = cur.fetchall()
 
-def set_last_watered_bulk(
-    user_id: int, updates: dict[int, datetime]
-) -> List[str]:
-    """
-    updates: {plant_id: datetime}
-    """
-    applied = []
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            for plant_id, dt in updates.items():
-                cur.execute(
-                    """
-                    UPDATE plants
-                    SET last_watered_at = %s
-                    WHERE user_id=%s AND id=%s AND active=TRUE
-                    """,
-                    (dt, user_id, plant_id),
-                )
-                if cur.rowcount == 1:
-                    applied.append(str(plant_id))
-        conn.commit()
-    return applied
+    for name, every, last in rows:
+        if every is None or last is None:
+            unknown.append(name)
+            continue
+
+        last_date = last.date()
+        due_date = last_date + timedelta(days=every)
+        delta = (due_date - now).days
+
+        if delta < 0:
+            overdue.append((name, abs(delta)))
+        elif delta == 0:
+            today.append(name)
+        else:
+            upcoming.append((name, delta))
+
+    return overdue, today, upcoming, unknown
