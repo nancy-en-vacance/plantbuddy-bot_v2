@@ -1,445 +1,132 @@
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from telegram import Update
 from telegram.ext import (
     Application,
     CommandHandler,
     ContextTypes,
-    ConversationHandler,
     MessageHandler,
+    ConversationHandler,
     filters,
 )
 
-from storage import (
-    init_db,
-    add_plant,
-    list_plants,
-    list_plants_with_norms,
-    list_plants_with_last_watered,
-    rename_plant,
-    archive_plant,
-    set_norm_days,
-    mark_watered,
-    count_plants,
-)
+from storage import init_db, list_plants, set_last_watered_bulk
 
-# ------------------ States ------------------
-ADD_ASK_NAME = 1
-
-REN_PICK = 10
-REN_NEW_NAME = 11
-
-DEL_PICK = 20
-
-NORM_PICK = 30
-NORM_DAYS = 31
-
-WATER_PICK = 40  # "1,3,5" etc.
+INIT_LAST_INPUT = 1
 
 
-def _format_plants(rows):
-    return "\n".join([f"{i+1}. {name}" for i, (_, name) in enumerate(rows)])
+def _format_plants(plants):
+    return "\n".join([f"{i+1}. {name}" for i, (_, name) in enumerate(plants)])
 
 
-def _format_norms(rows):
-    lines = []
-    for i, (_, name, every) in enumerate(rows):
-        if every is None:
-            lines.append(f"{i+1}. {name} — норма не задана")
-        else:
-            lines.append(f"{i+1}. {name} — раз в {every} дн.")
-    return "\n".join(lines)
-
-
-def _format_last_watered(rows):
-    # rows: [(id, name, last_watered_at)]
-    now = datetime.now(timezone.utc)
-    lines = []
-    for i, (_, name, last) in enumerate(rows):
-        if last is None:
-            lines.append(f"{i+1}. {name} — ещё не отмечали")
-        else:
-            # last can be naive/aware depending on driver; normalize
-            if last.tzinfo is None:
-                last = last.replace(tzinfo=timezone.utc)
-            days_ago = (now - last).days
-            dt = last.astimezone(timezone.utc).strftime("%Y-%m-%d")
-            lines.append(f"{i+1}. {name} — {dt} ({days_ago} дн. назад)")
-    return "\n".join(lines)
-
-
-def _parse_selection(text: str, max_n: int) -> list[int]:
-    """
-    Парсит '1,3, 5' -> [1,3,5] (1-based indices), фильтрует дубли, проверяет диапазон.
-    Возвращает список индексов (0-based) или [] если невалидно.
-    """
-    raw = text.replace(" ", "")
-    if not raw:
-        return []
-    parts = raw.split(",")
-    out = []
-    seen = set()
-    for p in parts:
-        if not p.isdigit():
-            return []
-        n = int(p)
-        if n < 1 or n > max_n:
-            return []
-        if n not in seen:
-            seen.add(n)
-            out.append(n - 1)
-    return out
-
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(
-        "Я живой ✅\n\nКоманды:\n"
-        "/add_plant — добавить растение\n"
-        "/plants — показать список растений\n"
-        "/rename_plant — переименовать растение\n"
-        "/delete_plant — удалить (архивировать) растение\n"
-        "/set_norms — задать норму полива (раз в N дней)\n"
-        "/norms — показать нормы\n"
-        "/water — отметить полив (можно несколько)\n"
-        "/last_watered — показать последний полив\n"
-        "/db — диагностика базы\n"
-        "/cancel — отмена"
-    )
-
-
-# ------------------ /db (diagnostic) ------------------
-async def db_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_id = update.effective_user.id
+def _parse_date(text: str) -> datetime | None:
+    if text.lower() == "today":
+        return datetime.now(timezone.utc)
     try:
-        n = count_plants(user_id)
-        await update.message.reply_text(f"DB OK ✅ plants for you: {n}")
-    except Exception as e:
-        await update.message.reply_text(f"DB ERROR ❌ {type(e).__name__}: {e}")
+        d = date.fromisoformat(text)
+        return datetime.combine(d, datetime.min.time(), tzinfo=timezone.utc)
+    except Exception:
+        return None
 
 
-# ------------------ /plants ------------------
-async def plants_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+# ---------------- /init_last ----------------
+async def init_last_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
-    rows = list_plants(user_id, active_only=True)
+    plants = list_plants(user_id)
 
-    if not rows:
-        await update.message.reply_text("Список пуст. Добавь первое растение: /add_plant")
-        return
-
-    await update.message.reply_text("Твои растения:\n" + _format_plants(rows))
-
-
-# ------------------ /norms ------------------
-async def norms_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_id = update.effective_user.id
-    rows = list_plants_with_norms(user_id, active_only=True)
-
-    if not rows:
-        await update.message.reply_text("Список пуст. Добавь растение: /add_plant")
-        return
-
-    await update.message.reply_text("Нормы полива:\n" + _format_norms(rows))
-
-
-# ------------------ /last_watered ------------------
-async def last_watered_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_id = update.effective_user.id
-    rows = list_plants_with_last_watered(user_id, active_only=True)
-
-    if not rows:
-        await update.message.reply_text("Список пуст. Добавь растение: /add_plant")
-        return
-
-    await update.message.reply_text("Последний полив:\n" + _format_last_watered(rows))
-
-
-# ------------------ /add_plant ------------------
-async def add_plant_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Как назовём растение? (например: Monstera)")
-    return ADD_ASK_NAME
-
-
-async def add_plant_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    name = (update.message.text or "").strip()
-    if not name:
-        await update.message.reply_text("Название пустое. Напиши имя растения 🙂")
-        return ADD_ASK_NAME
-
-    user_id = update.effective_user.id
-    ok = add_plant(user_id, name)
-    if not ok:
-        await update.message.reply_text(f"«{name}» уже есть. Хочешь другое имя?")
-        return ADD_ASK_NAME
-
-    await update.message.reply_text(f"Добавлено 🌱: {name}\n\nПосмотреть список: /plants")
-    return ConversationHandler.END
-
-
-# ------------------ /rename_plant ------------------
-async def rename_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = update.effective_user.id
-    rows = list_plants(user_id, active_only=True)
-
-    if not rows:
-        await update.message.reply_text("Список пуст. Добавь растение: /add_plant")
+    if not plants:
+        await update.message.reply_text("Список растений пуст.")
         return ConversationHandler.END
 
-    context.user_data["rename_rows"] = rows
-    await update.message.reply_text("Что переименовать? Ответь номером:\n" + _format_plants(rows))
-    return REN_PICK
+    context.user_data["init_last_plants"] = plants
+
+    await update.message.reply_text(
+        "Введи даты последнего полива в формате:\n"
+        "номер=дата\n\n"
+        "Пример:\n"
+        "1=2026-01-10\n"
+        "2=today\n"
+        "4=2026-01-08\n\n"
+        "Текущий список:\n"
+        + _format_plants(plants)
+    )
+    return INIT_LAST_INPUT
 
 
-async def rename_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    text = (update.message.text or "").strip()
-    if not text.isdigit():
-        await update.message.reply_text("Нужен номер из списка (например: 2).")
-        return REN_PICK
-
-    idx = int(text) - 1
-    rows = context.user_data.get("rename_rows") or []
-    if idx < 0 or idx >= len(rows):
-        await update.message.reply_text("Номер вне диапазона. Выбери из списка.")
-        return REN_PICK
-
-    plant_id, old_name = rows[idx]
-    context.user_data["rename_plant_id"] = plant_id
-    context.user_data["rename_old_name"] = old_name
-
-    await update.message.reply_text(f"Ок. Новое имя для «{old_name}»?")
-    return REN_NEW_NAME
-
-
-async def rename_new_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    new_name = (update.message.text or "").strip()
-    if not new_name:
-        await update.message.reply_text("Имя пустое. Напиши новое имя 🙂")
-        return REN_NEW_NAME
-
+async def init_last_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
-    plant_id = int(context.user_data.get("rename_plant_id"))
-    old_name = context.user_data.get("rename_old_name")
+    plants = context.user_data.get("init_last_plants", [])
+    text = update.message.text.strip()
 
-    ok = rename_plant(user_id, plant_id, new_name)
-    if not ok:
+    updates = {}
+    errors = []
+
+    for line in text.splitlines():
+        if "=" not in line:
+            errors.append(line)
+            continue
+
+        left, right = line.split("=", 1)
+        if not left.isdigit():
+            errors.append(line)
+            continue
+
+        idx = int(left) - 1
+        if idx < 0 or idx >= len(plants):
+            errors.append(line)
+            continue
+
+        dt = _parse_date(right.strip())
+        if not dt:
+            errors.append(line)
+            continue
+
+        plant_id = plants[idx][0]
+        updates[plant_id] = dt
+
+    if not updates:
         await update.message.reply_text(
-            "Не получилось переименовать. Возможно такое имя уже есть.\n"
-            "Попробуй другое имя или начни заново: /rename_plant"
+            "Не удалось распознать ни одной строки 😕\n"
+            "Формат: 1=2026-01-10 или 2=today"
         )
-        return ConversationHandler.END
+        return INIT_LAST_INPUT
 
-    await update.message.reply_text(f"Готово ✅ «{old_name}» → «{new_name}»\n\n/plants")
-    return ConversationHandler.END
+    applied = set_last_watered_bulk(user_id, updates)
 
-
-# ------------------ /delete_plant (archive) ------------------
-async def delete_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = update.effective_user.id
-    rows = list_plants(user_id, active_only=True)
-
-    if not rows:
-        await update.message.reply_text("Список пуст. Нечего удалять 🙂")
-        return ConversationHandler.END
-
-    context.user_data["delete_rows"] = rows
-    await update.message.reply_text("Что удалить (архивировать)? Ответь номером:\n" + _format_plants(rows))
-    return DEL_PICK
-
-
-async def delete_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    text = (update.message.text or "").strip()
-    if not text.isdigit():
-        await update.message.reply_text("Нужен номер из списка (например: 3).")
-        return DEL_PICK
-
-    idx = int(text) - 1
-    rows = context.user_data.get("delete_rows") or []
-    if idx < 0 or idx >= len(rows):
-        await update.message.reply_text("Номер вне диапазона. Выбери из списка.")
-        return DEL_PICK
-
-    plant_id, name = rows[idx]
-    user_id = update.effective_user.id
-
-    ok = archive_plant(user_id, int(plant_id))
-    if not ok:
-        await update.message.reply_text("Не получилось удалить (архивировать). Попробуй ещё раз: /delete_plant")
-        return ConversationHandler.END
-
-    await update.message.reply_text(f"Убрала в архив 🗑️: {name}\n\n/plants")
-    return ConversationHandler.END
-
-
-# ------------------ /set_norms ------------------
-async def set_norms_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = update.effective_user.id
-    rows = list_plants_with_norms(user_id, active_only=True)
-
-    if not rows:
-        await update.message.reply_text("Список пуст. Добавь растение: /add_plant")
-        return ConversationHandler.END
-
-    context.user_data["norm_rows"] = rows
     await update.message.reply_text(
-        "Для какого растения задать норму? Ответь номером:\n" + _format_norms(rows)
-    )
-    return NORM_PICK
-
-
-async def norm_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    text = (update.message.text or "").strip()
-    if not text.isdigit():
-        await update.message.reply_text("Нужен номер из списка (например: 1).")
-        return NORM_PICK
-
-    idx = int(text) - 1
-    rows = context.user_data.get("norm_rows") or []
-    if idx < 0 or idx >= len(rows):
-        await update.message.reply_text("Номер вне диапазона. Выбери из списка.")
-        return NORM_PICK
-
-    plant_id, name, _ = rows[idx]
-    context.user_data["norm_plant_id"] = plant_id
-    context.user_data["norm_plant_name"] = name
-
-    await update.message.reply_text(f"Ок. Норма для «{name}»: раз в сколько дней? (например: 5)")
-    return NORM_DAYS
-
-
-async def norm_days(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    text = (update.message.text or "").strip()
-    if not text.isdigit():
-        await update.message.reply_text("Нужно число (например: 7).")
-        return NORM_DAYS
-
-    days = int(text)
-    if days <= 0 or days > 365:
-        await update.message.reply_text("Давай число от 1 до 365.")
-        return NORM_DAYS
-
-    user_id = update.effective_user.id
-    plant_id = int(context.user_data.get("norm_plant_id"))
-    name = context.user_data.get("norm_plant_name")
-
-    ok = set_norm_days(user_id, plant_id, days)
-    if not ok:
-        await update.message.reply_text("Не получилось сохранить норму. Попробуй снова: /set_norms")
-        return ConversationHandler.END
-
-    await update.message.reply_text(f"Сохранено ✅ «{name}» — раз в {days} дн.\n\n/norms")
-    return ConversationHandler.END
-
-
-# ------------------ /water (multi select) ------------------
-async def water_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = update.effective_user.id
-    rows = list_plants(user_id, active_only=True)
-
-    if not rows:
-        await update.message.reply_text("Список пуст. Добавь растение: /add_plant")
-        return ConversationHandler.END
-
-    context.user_data["water_rows"] = rows
-    await update.message.reply_text(
-        "Какие растения ты полила? Можно несколько через запятую.\n"
-        "Например: 1,3,5\n\n"
-        + _format_plants(rows)
-    )
-    return WATER_PICK
-
-
-async def water_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    rows = context.user_data.get("water_rows") or []
-    text = (update.message.text or "").strip()
-
-    idxs = _parse_selection(text, max_n=len(rows))
-    if not idxs:
-        await update.message.reply_text("Не поняла. Введи номера через запятую (например: 2,4).")
-        return WATER_PICK
-
-    plant_ids = [int(rows[i][0]) for i in idxs]
-    user_id = update.effective_user.id
-
-    updated = mark_watered(user_id, plant_ids)
-    if updated == 0:
-        await update.message.reply_text("Не смогла отметить полив (попробуй ещё раз: /water).")
-        return ConversationHandler.END
-
-    names = [rows[i][1] for i in idxs]
-    await update.message.reply_text(
-        "Отметила полив ✅\n" + "\n".join([f"• {n}" for n in names]) + "\n\n/last_watered"
+        f"Инициализация завершена ✅\n"
+        f"Обновлено растений: {len(applied)}\n"
+        f"Можно продолжать 👉 /water или /today"
     )
     return ConversationHandler.END
 
 
-# ------------------ cancel ------------------
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Ок, отмена.")
-    return ConversationHandler.END
-
-
+# ---------------- main ----------------
 def main() -> None:
     token = os.environ["BOT_TOKEN"]
-    base_url = os.environ["BASE_URL"].strip().rstrip("/")
+    base_url = os.environ["BASE_URL"].rstrip("/")
     port = int(os.environ.get("PORT", "10000"))
-
     url_path = "webhook"
     webhook_url = f"{base_url}/{url_path}"
 
     init_db()
 
-    async def post_init(app: Application) -> None:
-        await app.bot.set_webhook(url=webhook_url)
-        print("WEBHOOK SET TO:", webhook_url)
-        print("PORT:", port)
+    async def post_init(app: Application):
+        await app.bot.set_webhook(webhook_url)
 
     app = Application.builder().token(token).post_init(post_init).build()
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("plants", plants_cmd))
-    app.add_handler(CommandHandler("norms", norms_cmd))
-    app.add_handler(CommandHandler("last_watered", last_watered_cmd))
-    app.add_handler(CommandHandler("db", db_cmd))
-
-    add_conv = ConversationHandler(
-        entry_points=[CommandHandler("add_plant", add_plant_cmd)],
-        states={ADD_ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_plant_name)]},
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-    app.add_handler(add_conv)
-
-    rename_conv = ConversationHandler(
-        entry_points=[CommandHandler("rename_plant", rename_cmd)],
+    init_last_conv = ConversationHandler(
+        entry_points=[CommandHandler("init_last", init_last_cmd)],
         states={
-            REN_PICK: [MessageHandler(filters.TEXT & ~filters.COMMAND, rename_pick)],
-            REN_NEW_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, rename_new_name)],
+            INIT_LAST_INPUT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, init_last_input)
+            ]
         },
-        fallbacks=[CommandHandler("cancel", cancel)],
+        fallbacks=[],
     )
-    app.add_handler(rename_conv)
 
-    delete_conv = ConversationHandler(
-        entry_points=[CommandHandler("delete_plant", delete_cmd)],
-        states={DEL_PICK: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_pick)]},
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-    app.add_handler(delete_conv)
-
-    norms_conv = ConversationHandler(
-        entry_points=[CommandHandler("set_norms", set_norms_cmd)],
-        states={
-            NORM_PICK: [MessageHandler(filters.TEXT & ~filters.COMMAND, norm_pick)],
-            NORM_DAYS: [MessageHandler(filters.TEXT & ~filters.COMMAND, norm_days)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-    app.add_handler(norms_conv)
-
-    water_conv = ConversationHandler(
-        entry_points=[CommandHandler("water", water_cmd)],
-        states={WATER_PICK: [MessageHandler(filters.TEXT & ~filters.COMMAND, water_pick)]},
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-    app.add_handler(water_conv)
+    app.add_handler(init_last_conv)
 
     app.run_webhook(
         listen="0.0.0.0",
