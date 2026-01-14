@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timedelta, date, timezone
+from datetime import datetime, timedelta, date
 from typing import List, Tuple, Dict, Optional
 import psycopg
 
@@ -89,6 +89,28 @@ def log_water(user_id: int, plant_id: int, when: datetime) -> bool:
         return cur.rowcount == 1
 
 
+def log_water_many(user_id: int, plant_ids: List[int], when: datetime) -> int:
+    """
+    Обновляет last_watered_at для списка растений.
+    Возвращает сколько реально обновилось (принадлежит user_id).
+    """
+    if not plant_ids:
+        return 0
+
+    updated = 0
+    with get_conn() as conn, conn.cursor() as cur:
+        for pid in plant_ids:
+            cur.execute("""
+            UPDATE plants
+            SET last_watered_at=%s
+            WHERE id=%s AND user_id=%s AND active=TRUE
+            """, (when, pid, user_id))
+            if cur.rowcount == 1:
+                updated += 1
+        conn.commit()
+    return updated
+
+
 def set_last_watered_bulk(user_id: int, updates: Dict[int, datetime]) -> int:
     updated = 0
     with get_conn() as conn, conn.cursor() as cur:
@@ -96,7 +118,7 @@ def set_last_watered_bulk(user_id: int, updates: Dict[int, datetime]) -> int:
             cur.execute("""
             UPDATE plants
             SET last_watered_at=%s
-            WHERE id=%s AND user_id=%s
+            WHERE id=%s AND user_id=%s AND active=TRUE
             """, (dt, plant_id, user_id))
             if cur.rowcount == 1:
                 updated += 1
@@ -123,7 +145,7 @@ def compute_today(user_id: int, today: date):
             unknown.append(name)
             continue
 
-        due = last.date() + timedelta(days=every)
+        due = last.date() + timedelta(days=int(every))
 
         if due < today:
             overdue.append((name, (today - due).days))
