@@ -16,15 +16,12 @@ from storage import (
     rename_plant,
     archive_plant,
     count_plants,
-    db_fingerprint,
 )
 
 # ------------------ States ------------------
 ADD_ASK_NAME = 1
-
 REN_PICK = 10
 REN_NEW_NAME = 11
-
 DEL_PICK = 20
 
 
@@ -49,8 +46,7 @@ async def db_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     try:
         n = count_plants(user_id)
-        fp = db_fingerprint()
-        await update.message.reply_text(f"DB OK ✅ plants for you: {n}\nDB: {fp}")
+        await update.message.reply_text(f"DB OK ✅ plants for you: {n}")
     except Exception as e:
         await update.message.reply_text(f"DB ERROR ❌ {type(e).__name__}: {e}")
 
@@ -99,9 +95,7 @@ async def rename_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return ConversationHandler.END
 
     context.user_data["rename_rows"] = rows
-    await update.message.reply_text(
-        "Что переименовать? Ответь номером:\n" + _format_plants(rows)
-    )
+    await update.message.reply_text("Что переименовать? Ответь номером:\n" + _format_plants(rows))
     return REN_PICK
 
 
@@ -157,9 +151,7 @@ async def delete_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return ConversationHandler.END
 
     context.user_data["delete_rows"] = rows
-    await update.message.reply_text(
-        "Что удалить (архивировать)? Ответь номером:\n" + _format_plants(rows)
-    )
+    await update.message.reply_text("Что удалить (архивировать)? Ответь номером:\n" + _format_plants(rows))
     return DEL_PICK
 
 
@@ -180,9 +172,7 @@ async def delete_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
     ok = archive_plant(user_id, int(plant_id))
     if not ok:
-        await update.message.reply_text(
-            "Не получилось удалить (архивировать). Попробуй ещё раз: /delete_plant"
-        )
+        await update.message.reply_text("Не получилось удалить (архивировать). Попробуй ещё раз: /delete_plant")
         return ConversationHandler.END
 
     await update.message.reply_text(f"Убрала в архив 🗑️: {name}\n\n/plants")
@@ -203,7 +193,6 @@ def main() -> None:
     url_path = "webhook"
     webhook_url = f"{base_url}/{url_path}"
 
-    # init DB (creates tables in Neon)
     init_db()
 
     async def post_init(app: Application) -> None:
@@ -219,9 +208,7 @@ def main() -> None:
 
     add_conv = ConversationHandler(
         entry_points=[CommandHandler("add_plant", add_plant_cmd)],
-        states={
-            ADD_ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_plant_name)]
-        },
+        states={ADD_ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_plant_name)]},
         fallbacks=[CommandHandler("cancel", cancel)],
     )
     app.add_handler(add_conv)
@@ -238,9 +225,7 @@ def main() -> None:
 
     delete_conv = ConversationHandler(
         entry_points=[CommandHandler("delete_plant", delete_cmd)],
-        states={
-            DEL_PICK: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_pick)],
-        },
+        states={DEL_PICK: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_pick)]},
         fallbacks=[CommandHandler("cancel", cancel)],
     )
     app.add_handler(delete_conv)
