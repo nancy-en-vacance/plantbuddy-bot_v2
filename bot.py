@@ -1,4 +1,4 @@
-# bot.py — final stable version for PlantBuddy
+# bot.py — final stable version for PlantBuddy (syntax-fixed)
 import os
 import asyncio
 from datetime import datetime, timedelta
@@ -29,51 +29,58 @@ from storage import (
     get_chat_id,
 )
 
-# ===== Config =====
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 BASE_URL = os.environ["BASE_URL"].rstrip("/")
 PORT = int(os.environ.get("PORT", "10000"))
-TZ = ZoneInfo("Asia/Kolkata")  # UTC+5:30
-AUTO_INTERVAL_SEC = 24 * 60 * 60
+
+TZ = ZoneInfo("Asia/Kolkata")
 
 
-# ===== Handlers =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_chat_id(update.effective_chat.id)
     await update.message.reply_text(
         "PlantBuddy 🌱 готов.
-
 "
-        "Основные команды:
+        "Команды:
 "
         "/add_plant
-/plants
-/rename_plant
-/delete_plant
+"
+        "/plants
+"
+        "/rename_plant
+"
+        "/delete_plant
 "
         "/set_norms
-/norms
-/water
-/last_watered
-/today
-/db
-/cancel"
+"
+        "/norms
+"
+        "/water
+"
+        "/last_watered
+"
+        "/today
+"
+        "/db
+"
+        "/cancel"
     )
 
 
 async def cmd_db(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ok, cnt = db_ok(update.effective_user.id)
-    await update.message.reply_text(
-        f"DB OK ✅ plants for you: {cnt}" if ok else "DB ERROR ❌"
-    )
+    if ok:
+        await update.message.reply_text(f"DB OK ✅ plants for you: {cnt}")
+    else:
+        await update.message.reply_text("DB ERROR ❌")
 
 
 async def cmd_plants(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    plants = list_plants(update.effective_user.id)
-    if not plants:
+    txt = list_plants(update.effective_user.id)
+    if not txt:
         await update.message.reply_text("Список пуст. Добавь растение: /add_plant")
     else:
-        await update.message.reply_text(plants)
+        await update.message.reply_text(txt)
 
 
 async def cmd_norms(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -82,23 +89,24 @@ async def cmd_norms(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    txt = plants_today(update.effective_user.id, TZ)
-    await update.message.reply_text(txt)
+    await update.message.reply_text(plants_today(update.effective_user.id, TZ))
 
 
 async def cmd_water(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["awaiting_water"] = True
     await update.message.reply_text(
-        "Отметь полив. Введи номера растений через запятую (например: 1,3,5)"
+        "Отметь полив.
+"
+        "Введи номера растений через запятую, например: 1,3,5"
     )
 
 
 async def handle_water_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.user_data.get("awaiting_water"):
         return
-    res = record_watering(update.effective_user.id, update.message.text, TZ)
-    context.user_data["awaiting_water"] = False
-    await update.message.reply_text(res)
+    result = record_watering(update.effective_user.id, update.message.text, TZ)
+    context.user_data.clear()
+    await update.message.reply_text(result)
 
 
 async def cmd_last_watered(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -111,32 +119,30 @@ async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Действие отменено.")
 
 
-# ===== Auto daily today =====
 async def auto_today_loop(app: Application):
     await app.bot.wait_until_ready()
     chat_id = get_chat_id()
     if not chat_id:
         return
 
-    # align to next 11:00 local time
     while True:
         now = datetime.now(TZ)
         target = now.replace(hour=11, minute=0, second=0, microsecond=0)
         if target <= now:
             target += timedelta(days=1)
+
         await asyncio.sleep((target - now).total_seconds())
         await app.bot.send_message(
             chat_id=chat_id,
             text=plants_today(None, TZ),
         )
-        await asyncio.sleep(AUTO_INTERVAL_SEC)
+        await asyncio.sleep(24 * 60 * 60)
 
 
 async def post_init(app: Application):
     asyncio.create_task(auto_today_loop(app))
 
 
-# ===== Main =====
 def main():
     ensure_schema()
 
@@ -155,7 +161,10 @@ def main():
     app.add_handler(CommandHandler("last_watered", cmd_last_watered))
     app.add_handler(CommandHandler("db", cmd_db))
     app.add_handler(CommandHandler("cancel", cmd_cancel))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_water_numbers))
+
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_water_numbers)
+    )
 
     app.run_webhook(
         listen="0.0.0.0",
