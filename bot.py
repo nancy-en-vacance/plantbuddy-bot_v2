@@ -13,20 +13,38 @@ from storage import (
     init_db,
     add_plant,
     list_plants,
+    list_plants_with_norms,
     rename_plant,
     archive_plant,
+    set_norm_days,
     count_plants,
 )
 
 # ------------------ States ------------------
 ADD_ASK_NAME = 1
+
 REN_PICK = 10
 REN_NEW_NAME = 11
+
 DEL_PICK = 20
+
+NORM_PICK = 30
+NORM_DAYS = 31
 
 
 def _format_plants(rows):
     return "\n".join([f"{i+1}. {name}" for i, (_, name) in enumerate(rows)])
+
+
+def _format_norms(rows):
+    # rows: [(id, name, every_days)]
+    lines = []
+    for i, (_, name, every) in enumerate(rows):
+        if every is None:
+            lines.append(f"{i+1}. {name} — норма не задана")
+        else:
+            lines.append(f"{i+1}. {name} — раз в {every} дн.")
+    return "\n".join(lines)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -36,6 +54,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/plants — показать список растений\n"
         "/rename_plant — переименовать растение\n"
         "/delete_plant — удалить (архивировать) растение\n"
+        "/set_norms — задать норму полива (раз в N дней)\n"
+        "/norms — показать нормы\n"
         "/db — диагностика базы\n"
         "/cancel — отмена"
     )
@@ -61,6 +81,18 @@ async def plants_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
 
     await update.message.reply_text("Твои растения:\n" + _format_plants(rows))
+
+
+# ------------------ /norms ------------------
+async def norms_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    rows = list_plants_with_norms(user_id, active_only=True)
+
+    if not rows:
+        await update.message.reply_text("Список пуст. Добавь растение: /add_plant")
+        return
+
+    await update.message.reply_text("Нормы полива:\n" + _format_norms(rows))
 
 
 # ------------------ /add_plant ------------------
@@ -132,7 +164,7 @@ async def rename_new_name(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     ok = rename_plant(user_id, plant_id, new_name)
     if not ok:
         await update.message.reply_text(
-            "Не получилось переименовать. Возможно такое имя уже есть или растение не найдено.\n"
+            "Не получилось переименовать. Возможно такое имя уже есть.\n"
             "Попробуй другое имя или начни заново: /rename_plant"
         )
         return ConversationHandler.END
@@ -179,6 +211,66 @@ async def delete_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     return ConversationHandler.END
 
 
+# ------------------ /set_norms ------------------
+async def set_norms_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.effective_user.id
+    rows = list_plants_with_norms(user_id, active_only=True)
+
+    if not rows:
+        await update.message.reply_text("Список пуст. Добавь растение: /add_plant")
+        return ConversationHandler.END
+
+    context.user_data["norm_rows"] = rows
+    await update.message.reply_text(
+        "Для какого растения задать норму? Ответь номером:\n" + _format_norms(rows)
+    )
+    return NORM_PICK
+
+
+async def norm_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    text = (update.message.text or "").strip()
+    if not text.isdigit():
+        await update.message.reply_text("Нужен номер из списка (например: 1).")
+        return NORM_PICK
+
+    idx = int(text) - 1
+    rows = context.user_data.get("norm_rows") or []
+    if idx < 0 or idx >= len(rows):
+        await update.message.reply_text("Номер вне диапазона. Выбери из списка.")
+        return NORM_PICK
+
+    plant_id, name, _ = rows[idx]
+    context.user_data["norm_plant_id"] = plant_id
+    context.user_data["norm_plant_name"] = name
+
+    await update.message.reply_text(f"Ок. Норма для «{name}»: раз в сколько дней? (например: 5)")
+    return NORM_DAYS
+
+
+async def norm_days(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    text = (update.message.text or "").strip()
+    if not text.isdigit():
+        await update.message.reply_text("Нужно число (например: 7).")
+        return NORM_DAYS
+
+    days = int(text)
+    if days <= 0 or days > 365:
+        await update.message.reply_text("Давай число от 1 до 365.")
+        return NORM_DAYS
+
+    user_id = update.effective_user.id
+    plant_id = int(context.user_data.get("norm_plant_id"))
+    name = context.user_data.get("norm_plant_name")
+
+    ok = set_norm_days(user_id, plant_id, days)
+    if not ok:
+        await update.message.reply_text("Не получилось сохранить норму. Попробуй снова: /set_norms")
+        return ConversationHandler.END
+
+    await update.message.reply_text(f"Сохранено ✅ «{name}» — раз в {days} дн.\n\n/norms")
+    return ConversationHandler.END
+
+
 # ------------------ cancel ------------------
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("Ок, отмена.")
@@ -204,6 +296,7 @@ def main() -> None:
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("plants", plants_cmd))
+    app.add_handler(CommandHandler("norms", norms_cmd))
     app.add_handler(CommandHandler("db", db_cmd))
 
     add_conv = ConversationHandler(
@@ -229,6 +322,16 @@ def main() -> None:
         fallbacks=[CommandHandler("cancel", cancel)],
     )
     app.add_handler(delete_conv)
+
+    norms_conv = ConversationHandler(
+        entry_points=[CommandHandler("set_norms", set_norms_cmd)],
+        states={
+            NORM_PICK: [MessageHandler(filters.TEXT & ~filters.COMMAND, norm_pick)],
+            NORM_DAYS: [MessageHandler(filters.TEXT & ~filters.COMMAND, norm_days)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+    app.add_handler(norms_conv)
 
     app.run_webhook(
         listen="0.0.0.0",
