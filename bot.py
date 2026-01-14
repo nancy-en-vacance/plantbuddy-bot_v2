@@ -1,7 +1,10 @@
 import os
 import re
-from datetime import datetime, timezone, timedelta, time as dtime
+import asyncio
+from dataclasses import dataclass
+from datetime import datetime, date, time, timedelta
 from zoneinfo import ZoneInfo
+from typing import Optional, List, Tuple, Dict
 
 import psycopg
 from psycopg.rows import dict_row
@@ -16,189 +19,141 @@ from telegram.ext import (
     filters,
 )
 
-TZ = ZoneInfo("Asia/Kolkata")
-URL_PATH = "webhook"
+# =========================
+# Config
+# =========================
+TZ = ZoneInfo("Asia/Kolkata")  # local timezone only (UTC+5:30)
+REMINDER_HOUR = 11
+REMINDER_MINUTE = 0
 
-AUTO_TODAY_AT = dtime(hour=11, minute=0, tzinfo=TZ)
+BOT_TOKEN_ENV = "BOT_TOKEN"
+BASE_URL_ENV = "BASE_URL"
+DB_URL_ENV = "DATABASE_URL"
+PORT_ENV = "PORT"
 
-ADD_NAME = 10
-RENAME_PICK = 20
-RENAME_NEW = 21
-DELETE_PICK = 30
-DELETE_CONFIRM = 31
-NORMS_SET = 40
-WATER_PICK = 50
+WEBHOOK_PATH = "webhook"
 
-
+# =========================
+# DB helpers
+# =========================
 def _db_url() -> str:
-    return os.environ["DATABASE_URL"]
-
+    url = os.environ.get(DB_URL_ENV, "").strip()
+    if not url:
+        raise RuntimeError("DATABASE_URL is missing")
+    return url
 
 def _connect():
-    url = _db_url()
-    if "sslmode=" not in url:
-        sep = "&" if "?" in url else "?"
-        url = f"{url}{sep}sslmode=require"
-    return psycopg.connect(url, row_factory=dict_row)
-
+    # Neon/Render URLs often start with postgres:// ; psycopg accepts both.
+    return psycopg.connect(_db_url(), row_factory=dict_row)
 
 def _col_exists(cur, table: str, col: str) -> bool:
     cur.execute(
         """
         SELECT 1
         FROM information_schema.columns
-        WHERE table_schema='public'
-          AND table_name=%s
-          AND column_name=%s
+        WHERE table_name=%s AND column_name=%s
+        LIMIT 1;
         """,
         (table, col),
     )
     return cur.fetchone() is not None
 
-
 def ensure_schema() -> None:
+    """Idempotent schema + safe migration active->archived (only if needed)."""
     with _connect() as conn:
         with conn.cursor() as cur:
+            # plants
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS plants (
-                    id BIGSERIAL PRIMARY KEY,
+                    id SERIAL PRIMARY KEY,
                     user_id BIGINT NOT NULL,
                     name TEXT NOT NULL,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    archived BOOLEAN NOT NULL DEFAULT FALSE,
+                    created_at TIMESTAMP DEFAULT now(),
+                    UNIQUE(user_id, name)
                 );
                 """
             )
 
-            # поддерживаем старую схему, где был active вместо archived
-            has_active = _col_exists(cur, "plants", "active")
-            has_archived = _col_exists(cur, "plants", "archived")
-
-            if has_active and not has_archived:
-                cur.execute("ALTER TABLE plants ADD COLUMN archived BOOLEAN NOT NULL DEFAULT FALSE;")
-                # считаем active=FALSE как archived=TRUE
-                cur.execute("UPDATE plants SET archived = NOT active;")
-
-            if not has_archived:
-                cur.execute("ALTER TABLE plants ADD COLUMN archived BOOLEAN NOT NULL DEFAULT FALSE;")
-
-            if not _col_exists(cur, "plants", "last_watered_at"):
-                cur.execute("ALTER TABLE plants ADD COLUMN last_watered_at TIMESTAMPTZ;")
-
-            cur.execute(
-                """
-                CREATE UNIQUE INDEX IF NOT EXISTS plants_user_name_uq
-                ON plants(user_id, lower(name))
-                WHERE archived = FALSE;
-                """
-            )
-
+            # norms (watering interval in days)
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS norms (
-                    plant_id BIGINT PRIMARY KEY REFERENCES plants(id) ON DELETE CASCADE,
+                    plant_id INT PRIMARY KEY REFERENCES plants(id) ON DELETE CASCADE,
                     interval_days INT NOT NULL CHECK (interval_days > 0)
                 );
                 """
             )
 
+            # waterings log
             cur.execute(
                 """
-                CREATE TABLE IF NOT EXISTS water_log (
-                    id BIGSERIAL PRIMARY KEY,
-                    user_id BIGINT NOT NULL,
-                    plant_id BIGINT NOT NULL REFERENCES plants(id) ON DELETE CASCADE,
-                    watered_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                CREATE TABLE IF NOT EXISTS waterings (
+                    id SERIAL PRIMARY KEY,
+                    plant_id INT REFERENCES plants(id) ON DELETE CASCADE,
+                    watered_at DATE NOT NULL
                 );
                 """
             )
 
-            # кто получит авто-today (user_id -> chat_id)
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS meta (
-                    user_id BIGINT PRIMARY KEY,
-                    chat_id BIGINT NOT NULL,
-                    last_autotoday_sent DATE
-                );
-                """
-            )
+            # ---- migration: active -> archived (legacy) ----
+            has_archived = _col_exists(cur, "plants", "archived")
+            has_active = _col_exists(cur, "plants", "active")
 
+            # If someone had legacy schema with "active", we convert it to archived.
+            # If archived already exists, we do nothing.
+            if has_active and not has_archived:
+                cur.execute(
+                    "ALTER TABLE plants ADD COLUMN archived BOOLEAN NOT NULL DEFAULT FALSE;"
+                )
+                cur.execute("UPDATE plants SET archived = NOT active;")
 
-def _upsert_chat(user_id: int, chat_id: int) -> None:
+# =========================
+# DB operations
+# =========================
+def db_diag() -> Tuple[bool, str]:
+    try:
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1;")
+                cur.execute("SELECT COUNT(*) AS c FROM plants;")
+                c = cur.fetchone()["c"]
+        return True, f"DB OK ✅ plants total: {c}"
+    except Exception as e:
+        return False, f"DB ERROR ❌ {type(e).__name__}: {e}"
+
+def list_plants(user_id: int) -> List[dict]:
     with _connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO meta(user_id, chat_id)
-                VALUES (%s,%s)
-                ON CONFLICT (user_id) DO UPDATE SET chat_id = EXCLUDED.chat_id
-                """,
-                (user_id, chat_id),
-            )
-
-
-def _get_all_recipients():
-    with _connect() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT user_id, chat_id, last_autotoday_sent FROM meta")
-            return cur.fetchall()
-
-
-def _mark_autotoday_sent(user_id: int, day_local) -> None:
-    with _connect() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "UPDATE meta SET last_autotoday_sent=%s WHERE user_id=%s",
-                (day_local, user_id),
-            )
-
-
-def _get_plants(user_id: int):
-    with _connect() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT id, name, last_watered_at
+                SELECT id, name
                 FROM plants
                 WHERE user_id=%s AND archived=FALSE
-                ORDER BY id
+                ORDER BY id;
                 """,
                 (user_id,),
             )
             return cur.fetchall()
 
-
-def _add_plant(user_id: int, name: str) -> tuple[bool, str]:
+def add_plant(user_id: int, name: str) -> Tuple[bool, str]:
     name = name.strip()
     if not name:
         return False, "Имя пустое."
     with _connect() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT id, archived
-                FROM plants
-                WHERE user_id=%s AND lower(name)=lower(%s)
-                ORDER BY id DESC LIMIT 1
-                """,
-                (user_id, name),
-            )
-            row = cur.fetchone()
-            if row and row["archived"]:
-                cur.execute("UPDATE plants SET archived=FALSE WHERE id=%s", (row["id"],))
-                return True, "Разархивировала ✅"
             try:
                 cur.execute(
-                    "INSERT INTO plants(user_id, name, archived) VALUES (%s,%s,FALSE)",
+                    "INSERT INTO plants(user_id, name) VALUES (%s,%s) RETURNING id;",
                     (user_id, name),
                 )
-                return True, "Добавлено 🌱"
+                _ = cur.fetchone()["id"]
+                return True, f"Добавлено 🌱: {name}"
             except Exception:
-                return False, f"У тебя уже есть «{name}». Хочешь другое имя?"
+                return False, f'У тебя уже есть «{name}». Хочешь другое имя?'
 
-
-def _rename_plant(user_id: int, plant_id: int, new_name: str) -> tuple[bool, str]:
+def rename_plant(user_id: int, plant_id: int, new_name: str) -> Tuple[bool, str]:
     new_name = new_name.strip()
     if not new_name:
         return False, "Имя пустое."
@@ -206,27 +161,27 @@ def _rename_plant(user_id: int, plant_id: int, new_name: str) -> tuple[bool, str
         with conn.cursor() as cur:
             try:
                 cur.execute(
-                    "UPDATE plants SET name=%s WHERE id=%s AND user_id=%s",
+                    "UPDATE plants SET name=%s WHERE id=%s AND user_id=%s AND archived=FALSE;",
                     (new_name, plant_id, user_id),
                 )
+                if cur.rowcount == 0:
+                    return False, "Не нашла такое растение."
                 return True, "Переименовано ✅"
             except Exception:
-                return False, f"Имя «{new_name}» уже занято."
+                return False, f'Имя «{new_name}» уже занято.'
 
+def archive_plant(user_id: int, plant_id: int) -> Tuple[bool, str]:
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE plants SET archived=TRUE WHERE id=%s AND user_id=%s AND archived=FALSE;",
+                (plant_id, user_id),
+            )
+            if cur.rowcount == 0:
+                return False, "Не нашла такое растение."
+            return True, "Удалено (архивировано) ✅"
 
-has_archived = _col_exists(cur, "plants", "archived")
-has_active = _col_exists(cur, "plants", "active")
-
-if has_active and not has_archived:
-    cur.execute(
-        "ALTER TABLE plants ADD COLUMN archived BOOLEAN NOT NULL DEFAULT FALSE;"
-    )
-    cur.execute("UPDATE plants SET archived = NOT active;")
-
-# НИЧЕГО не делаем, если archived уже есть
-
-
-def _set_norm(plant_id: int, days: int) -> None:
+def set_norm(plant_id: int, days: int) -> None:
     with _connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -234,479 +189,539 @@ def _set_norm(plant_id: int, days: int) -> None:
                 INSERT INTO norms(plant_id, interval_days)
                 VALUES (%s,%s)
                 ON CONFLICT (plant_id) DO UPDATE
-                SET interval_days = EXCLUDED.interval_days
+                SET interval_days=EXCLUDED.interval_days;
                 """,
                 (plant_id, days),
             )
 
-
-def _get_norms_map(user_id: int) -> dict[int, int]:
+def get_norms(user_id: int) -> List[dict]:
     with _connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT n.plant_id, n.interval_days
-                FROM norms n
-                JOIN plants p ON p.id=n.plant_id
+                SELECT p.id, p.name, n.interval_days
+                FROM plants p
+                JOIN norms n ON n.plant_id = p.id
                 WHERE p.user_id=%s AND p.archived=FALSE
+                ORDER BY p.id;
+                """,
+                (user_id,),
+            )
+            return cur.fetchall()
+
+def get_last_watered(user_id: int) -> List[dict]:
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT p.id, p.name, MAX(w.watered_at) AS last_watered
+                FROM plants p
+                LEFT JOIN waterings w ON w.plant_id = p.id
+                WHERE p.user_id=%s AND p.archived=FALSE
+                GROUP BY p.id, p.name
+                ORDER BY p.id;
+                """,
+                (user_id,),
+            )
+            return cur.fetchall()
+
+def log_watering(plant_ids: List[int], watered_on: date) -> int:
+    if not plant_ids:
+        return 0
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.executemany(
+                "INSERT INTO waterings(plant_id, watered_at) VALUES (%s,%s);",
+                [(pid, watered_on) for pid in plant_ids],
+            )
+            return len(plant_ids)
+
+def init_last_watered(user_id: int, mapping: Dict[int, date]) -> int:
+    """mapping: plant_id -> date"""
+    if not mapping:
+        return 0
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            # ensure plants belong to user and not archived
+            cur.execute(
+                "SELECT id FROM plants WHERE user_id=%s AND archived=FALSE;",
+                (user_id,),
+            )
+            allowed = {row["id"] for row in cur.fetchall()}
+            rows = [(pid, d) for pid, d in mapping.items() if pid in allowed]
+            cur.executemany(
+                "INSERT INTO waterings(plant_id, watered_at) VALUES (%s,%s);",
+                rows,
+            )
+            return len(rows)
+
+def get_users() -> List[int]:
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT DISTINCT user_id FROM plants;")
+            return [r["user_id"] for r in cur.fetchall()]
+
+def today_due_for_user(user_id: int) -> Tuple[List[str], List[str]]:
+    """Return (overdue_lines, today_lines). Excludes 'Пока не нужно' by design."""
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    p.id,
+                    p.name,
+                    n.interval_days,
+                    MAX(w.watered_at) AS last_watered
+                FROM plants p
+                LEFT JOIN norms n ON n.plant_id = p.id
+                LEFT JOIN waterings w ON w.plant_id = p.id
+                WHERE p.user_id=%s AND p.archived=FALSE
+                GROUP BY p.id, p.name, n.interval_days
+                ORDER BY p.id;
                 """,
                 (user_id,),
             )
             rows = cur.fetchall()
-    return {r["plant_id"]: r["interval_days"] for r in rows}
 
+    today = datetime.now(TZ).date()
+    overdue, due_today = [], []
 
-def _log_water(user_id: int, plant_ids: list[int], when_utc: datetime) -> int:
-    with _connect() as conn:
-        with conn.cursor() as cur:
-            for pid in plant_ids:
-                cur.execute(
-                    "INSERT INTO water_log(user_id, plant_id, watered_at) VALUES (%s,%s,%s)",
-                    (user_id, pid, when_utc),
-                )
-                cur.execute(
-                    "UPDATE plants SET last_watered_at=%s WHERE id=%s AND user_id=%s",
-                    (when_utc, pid, user_id),
-                )
-    return len(plant_ids)
+    for r in rows:
+        name = r["name"]
+        interval = r["interval_days"]
+        last = r["last_watered"]
 
+        if interval is None:
+            # no norm -> ignore in today list (keeps output clean)
+            continue
 
-def _fmt_dt(dt: datetime | None) -> str:
-    if not dt:
-        return "—"
-    return dt.astimezone(TZ).strftime("%d.%m.%Y %H:%M")
+        if last is None:
+            # no last watered -> treat as overdue
+            overdue.append(f"• {name} — нет даты последнего полива")
+            continue
 
+        next_due = last + timedelta(days=int(interval))
+        delta = (today - next_due).days
 
-def _plants_text(plants) -> str:
-    if not plants:
-        return "Список пуст. Добавь первое растение: /add_plant"
+        if delta == 0:
+            due_today.append(f"• {name} — сегодня")
+        elif delta > 0:
+            # yesterday phrasing for delta==1
+            if delta == 1:
+                overdue.append(f"• {name} — вчера нужно было полить")
+            else:
+                overdue.append(f"• {name} — просрочено на {delta} дн.")
+
+    return overdue, due_today
+
+# =========================
+# Bot UX helpers
+# =========================
+def _fmt_plants(plants: List[dict]) -> str:
     lines = ["Твои растения:"]
     for i, p in enumerate(plants, 1):
         lines.append(f"{i}. {p['name']}")
     return "\n".join(lines)
 
-
-def _norms_text(user_id: int) -> str:
-    plants = _get_plants(user_id)
-    norms = _get_norms_map(user_id)
-    if not plants:
-        return "Список пуст. Добавь растение: /add_plant"
-    if not norms:
-        return "Нормы пока не заданы. Задай: /set_norms"
-    lines = ["Нормы полива:"]
-    for i, p in enumerate(plants, 1):
-        n = norms.get(p["id"])
-        if n:
-            lines.append(f"{i}. {p['name']} — раз в {n} дн.")
-    return "\n".join(lines)
-
-
-def _last_watered_text(user_id: int) -> str:
-    plants = _get_plants(user_id)
-    if not plants:
-        return "Список пуст. Добавь растение: /add_plant"
-    lines = ["Последний полив:"]
-    for i, p in enumerate(plants, 1):
-        lines.append(f"{i}. {p['name']} — {_fmt_dt(p['last_watered_at'])}")
-    return "\n".join(lines)
-
-
-def _today_text(user_id: int) -> str:
-    plants = _get_plants(user_id)
-    norms = _get_norms_map(user_id)
-
-    now_local = datetime.now(TZ)
-    today_local = now_local.date()
-
-    overdue = []
-    due_today = []
-
-    for p in plants:
-        interval = norms.get(p["id"])
-        if not interval:
-            continue
-
-        last = p["last_watered_at"]
-        if last is None:
-            overdue.append((p["name"], None, interval))
-            continue
-
-        last_date = last.astimezone(TZ).date()
-        next_due = last_date + timedelta(days=interval)
-
-        if next_due < today_local:
-            days_over = (today_local - next_due).days
-            overdue.append((p["name"], days_over, interval))
-        elif next_due == today_local:
-            due_today.append(p["name"])
-
-    overdue.sort(key=lambda x: (9999 if x[1] is None else x[1]), reverse=True)
-    due_today.sort(key=lambda x: x.lower())
-
-    if not overdue and not due_today:
-        return "Сегодня полив не нужен ✅"
-
-    parts = []
-    if overdue:
-        parts.append("Просрочено:")
-        for name, days_over, interval in overdue:
-            if days_over is None:
-                parts.append(f"• {name} — нет даты последнего полива (норма {interval} дн.)")
-            elif days_over == 1:
-                parts.append(f"• Вчера нужно было полить: {name}")
-            else:
-                parts.append(f"• {days_over} дн. назад нужно было полить: {name}")
-
-    if due_today:
-        parts.append("")
-        parts.append("Сегодня:")
-        for name in due_today:
-            parts.append(f"• {name}")
-
-    return "\n".join(parts)
-
-
-def _parse_int_list(text: str) -> list[int]:
-    nums = re.findall(r"\d+", text or "")
+def _parse_numbers(text: str) -> List[int]:
+    nums = re.findall(r"\d+", text)
     return [int(x) for x in nums]
 
-
-def _parse_norm_pairs(text: str) -> list[tuple[int, int]]:
-    text = (text or "").replace(":", "=")
-    chunks = re.split(r"[,\n ]+", text.strip())
+def _id_by_index(plants: List[dict], indices: List[int]) -> List[int]:
+    ids = []
+    for idx in indices:
+        if 1 <= idx <= len(plants):
+            ids.append(plants[idx - 1]["id"])
+    # unique preserve order
+    seen = set()
     out = []
-    for c in chunks:
-        if "=" not in c:
-            continue
-        a, b = c.split("=", 1)
-        if a.strip().isdigit() and b.strip().isdigit():
-            out.append((int(a.strip()), int(b.strip())))
+    for pid in ids:
+        if pid not in seen:
+            out.append(pid)
+            seen.add(pid)
     return out
 
+def _parse_init_lines(text: str, plants: List[dict]) -> Dict[int, date]:
+    """
+    Accept lines:
+      1=2026-01-10
+      2 2026-01-12
+      3:2026-01-05
+    """
+    mapping: Dict[int, date] = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        m = re.match(r"^\s*(\d+)\s*[:= ]\s*(\d{4}-\d{2}-\d{2})\s*$", line)
+        if not m:
+            continue
+        idx = int(m.group(1))
+        ds = m.group(2)
+        try:
+            d = date.fromisoformat(ds)
+        except Exception:
+            continue
+        if 1 <= idx <= len(plants):
+            mapping[plants[idx - 1]["id"]] = d
+    return mapping
 
 # =========================
-# HANDLERS
+# Conversation states
 # =========================
-async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    uid = update.effective_user.id
-    chat_id = update.effective_chat.id
-    _upsert_chat(uid, chat_id)
+ADD_NAME = 10
+RENAME_PICK, RENAME_NEW = 20, 21
+DELETE_PICK = 30
+SETNORM_PICK, SETNORM_DAYS = 40, 41
+WATER_PICK = 50
+INITLAST_INPUT = 60
 
-    await update.message.reply_text(
-        "Я живой ✅\n\nКоманды:\n"
-        "/add_plant — добавить растение\n"
-        "/plants — список\n"
-        "/rename_plant — переименовать\n"
-        "/delete_plant — удалить (в архив)\n"
-        "/set_norms — задать норму полива (раз в N дней)\n"
-        "/norms — показать нормы\n"
-        "/water — отметить полив (можно несколько)\n"
-        "/last_watered — показать последний полив\n"
-        "/today — что полить сегодня\n"
-        "/db — диагностика базы\n"
-        "/cancel — отмена"
-    )
+# =========================
+# Handlers
+# =========================
+async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text("Я живой ✅")
 
+async def cmd_db(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    ok, msg = db_diag()
+    await update.message.reply_text(msg)
 
-async def plants_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    uid = update.effective_user.id
-    await update.message.reply_text(_plants_text(_get_plants(uid)))
+async def cmd_plants(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    plants = list_plants(user_id)
+    if not plants:
+        await update.message.reply_text("Список пуст. Добавь первое растение:\n/add_plant")
+        return
+    await update.message.reply_text(_fmt_plants(plants))
 
-
-async def norms_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    uid = update.effective_user.id
-    await update.message.reply_text(_norms_text(uid))
-
-
-async def last_watered_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    uid = update.effective_user.id
-    await update.message.reply_text(_last_watered_text(uid))
-
-
-async def today_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    uid = update.effective_user.id
-    await update.message.reply_text(_today_text(uid))
-
-
-async def db_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    uid = update.effective_user.id
-    try:
-        ensure_schema()
-        plants = _get_plants(uid)
-        await update.message.reply_text(f"DB OK ✅ plants for you: {len(plants)}")
-    except Exception as e:
-        await update.message.reply_text(f"DB FAIL ❌ {type(e).__name__}: {e}")
-
-
-async def cancel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data.pop("tmp", None)
-    await update.message.reply_text("Ок, отмена ✅")
-    return ConversationHandler.END
-
-
-# /add_plant
-async def add_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+# --- add plant ---
+async def add_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("Как назовём растение? (например: Monstera)")
     return ADD_NAME
 
+async def add_got_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.effective_user.id
+    name = (update.message.text or "").strip()
+    ok, msg = add_plant(user_id, name)
+    await update.message.reply_text(msg + "\n\nПосмотреть список: /plants")
+    return ConversationHandler.END
 
-async def add_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    uid = update.effective_user.id
-    ok, msg = _add_plant(uid, update.message.text or "")
-    await update.message.reply_text(msg + ("\n\nПосмотреть список: /plants" if ok else ""))
-    return ConversationHandler.END if ok else ADD_NAME
-
-
-# /rename_plant
-async def rename_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    uid = update.effective_user.id
-    plants = _get_plants(uid)
+# --- rename ---
+async def rename_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.effective_user.id
+    plants = list_plants(user_id)
     if not plants:
-        await update.message.reply_text("Список пуст. Добавь растение: /add_plant")
+        await update.message.reply_text("Список пуст. /add_plant")
         return ConversationHandler.END
-    context.user_data["tmp"] = {"plants": plants}
-    await update.message.reply_text("Что переименовать? Введи номер:\n\n" + _plants_text(plants))
+    context.user_data["plants_cache"] = plants
+    await update.message.reply_text("Что переименовать? Введи номер:\n\n" + _fmt_plants(plants))
     return RENAME_PICK
 
-
 async def rename_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    txt = (update.message.text or "").strip()
-    if not txt.isdigit():
-        await update.message.reply_text("Нужен номер. Пример: 3")
+    plants = context.user_data.get("plants_cache", [])
+    idxs = _parse_numbers(update.message.text or "")
+    if len(idxs) != 1:
+        await update.message.reply_text("Нужен один номер. Пример: 3")
         return RENAME_PICK
-    num = int(txt)
-    plants = context.user_data.get("tmp", {}).get("plants") or []
-    if not (1 <= num <= len(plants)):
-        await update.message.reply_text("Неверный номер.")
+    idx = idxs[0]
+    if not (1 <= idx <= len(plants)):
+        await update.message.reply_text("Нет такого номера.")
         return RENAME_PICK
-    context.user_data["tmp"]["pick"] = num
-    await update.message.reply_text("Ок. Новое имя?")
+    context.user_data["rename_pid"] = plants[idx - 1]["id"]
+    await update.message.reply_text("Ок. Введи новое имя:")
     return RENAME_NEW
 
-
 async def rename_new(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    uid = update.effective_user.id
-    tmp = context.user_data.get("tmp") or {}
-    plants = tmp.get("plants") or []
-    num = tmp.get("pick")
-    plant = plants[num - 1]
-    ok, msg = _rename_plant(uid, plant["id"], update.message.text or "")
+    user_id = update.effective_user.id
+    pid = int(context.user_data["rename_pid"])
+    new_name = (update.message.text or "").strip()
+    ok, msg = rename_plant(user_id, pid, new_name)
     await update.message.reply_text(msg)
-    context.user_data.pop("tmp", None)
     return ConversationHandler.END
 
-
-# /delete_plant
-async def delete_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    uid = update.effective_user.id
-    plants = _get_plants(uid)
+# --- delete/archive ---
+async def delete_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.effective_user.id
+    plants = list_plants(user_id)
     if not plants:
-        await update.message.reply_text("Список пуст. Добавь растение: /add_plant")
+        await update.message.reply_text("Список пуст.")
         return ConversationHandler.END
-    context.user_data["tmp"] = {"plants": plants}
-    await update.message.reply_text("Что удалить (в архив)? Введи номер:\n\n" + _plants_text(plants))
+    context.user_data["plants_cache"] = plants
+    await update.message.reply_text("Что удалить (архивировать)? Введи номер:\n\n" + _fmt_plants(plants))
     return DELETE_PICK
 
-
 async def delete_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    txt = (update.message.text or "").strip()
-    if not txt.isdigit():
-        await update.message.reply_text("Нужен номер.")
+    user_id = update.effective_user.id
+    plants = context.user_data.get("plants_cache", [])
+    idxs = _parse_numbers(update.message.text or "")
+    if len(idxs) != 1:
+        await update.message.reply_text("Нужен один номер. Пример: 2")
         return DELETE_PICK
-    num = int(txt)
-    plants = context.user_data.get("tmp", {}).get("plants") or []
-    if not (1 <= num <= len(plants)):
-        await update.message.reply_text("Неверный номер.")
+    idx = idxs[0]
+    if not (1 <= idx <= len(plants)):
+        await update.message.reply_text("Нет такого номера.")
         return DELETE_PICK
-    context.user_data["tmp"]["pick"] = num
-    plant = plants[num - 1]
-    await update.message.reply_text(f"Точно архивировать «{plant['name']}»?\nОтветь: yes / no")
-    return DELETE_CONFIRM
-
-
-async def delete_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    uid = update.effective_user.id
-    ans = (update.message.text or "").strip().lower()
-    if ans not in ("yes", "no"):
-        await update.message.reply_text("Ответь: yes или no")
-        return DELETE_CONFIRM
-    if ans == "no":
-        await update.message.reply_text("Ок ✅")
-        context.user_data.pop("tmp", None)
-        return ConversationHandler.END
-
-    tmp = context.user_data.get("tmp") or {}
-    plants = tmp.get("plants") or []
-    num = tmp.get("pick")
-    plant = plants[num - 1]
-    _archive_plant(uid, plant["id"])
-    await update.message.reply_text("Готово ✅ (в архив)")
-    context.user_data.pop("tmp", None)
+    pid = plants[idx - 1]["id"]
+    ok, msg = archive_plant(user_id, pid)
+    await update.message.reply_text(msg)
     return ConversationHandler.END
 
+# --- norms ---
+async def norms_show(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    rows = get_norms(user_id)
+    if not rows:
+        await update.message.reply_text("Нормы пока не заданы. /set_norms")
+        return
+    lines = ["Нормы полива:"]
+    for i, r in enumerate(rows, 1):
+        lines.append(f"{i}. {r['name']} — раз в {r['interval_days']} дн.")
+    await update.message.reply_text("\n".join(lines))
 
-# /set_norms
-async def norms_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    uid = update.effective_user.id
-    plants = _get_plants(uid)
+async def set_norms_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.effective_user.id
+    plants = list_plants(user_id)
     if not plants:
-        await update.message.reply_text("Список пуст. Добавь растение: /add_plant")
+        await update.message.reply_text("Список пуст. /add_plant")
         return ConversationHandler.END
-    context.user_data["tmp"] = {"plants": plants}
+    context.user_data["plants_cache"] = plants
+    await update.message.reply_text("Для какого растения задать норму? Введи номер:\n\n" + _fmt_plants(plants))
+    return SETNORM_PICK
+
+async def set_norms_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    plants = context.user_data.get("plants_cache", [])
+    idxs = _parse_numbers(update.message.text or "")
+    if len(idxs) != 1:
+        await update.message.reply_text("Нужен один номер. Пример: 1")
+        return SETNORM_PICK
+    idx = idxs[0]
+    if not (1 <= idx <= len(plants)):
+        await update.message.reply_text("Нет такого номера.")
+        return SETNORM_PICK
+    context.user_data["norm_pid"] = plants[idx - 1]["id"]
+    await update.message.reply_text("Введи интервал в днях (например: 5)")
+    return SETNORM_DAYS
+
+async def set_norms_days(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    pid = int(context.user_data["norm_pid"])
+    idxs = _parse_numbers(update.message.text or "")
+    if len(idxs) != 1 or idxs[0] <= 0:
+        await update.message.reply_text("Нужно число дней > 0. Пример: 7")
+        return SETNORM_DAYS
+    days = idxs[0]
+    set_norm(pid, days)
+    await update.message.reply_text("Норма сохранена ✅\n\nПосмотреть: /norms")
+    return ConversationHandler.END
+
+# --- last watered ---
+async def cmd_last_watered(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    rows = get_last_watered(user_id)
+    if not rows:
+        await update.message.reply_text("Список пуст.")
+        return
+    lines = ["Последний полив:"]
+    for i, r in enumerate(rows, 1):
+        lw = r["last_watered"]
+        lw_txt = lw.isoformat() if lw else "нет данных"
+        lines.append(f"{i}. {r['name']} — {lw_txt}")
+    await update.message.reply_text("\n".join(lines))
+
+# --- init last watered (different dates for different plants) ---
+async def init_last_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.effective_user.id
+    plants = list_plants(user_id)
+    if not plants:
+        await update.message.reply_text("Список пуст. /add_plant")
+        return ConversationHandler.END
+    context.user_data["plants_cache"] = plants
     await update.message.reply_text(
-        "Задай нормы в формате номер=дни.\nПример: 1=7, 3=4\n\n" + _plants_text(plants)
+        "Ок, зададим последний полив для каждого растения.\n"
+        "Пришли мне список строк в формате:\n"
+        "1=2026-01-10\n"
+        "2 2026-01-12\n"
+        "3:2026-01-05\n\n"
+        "Нумерация — как в /plants.\n\n"
+        + _fmt_plants(plants)
     )
-    return NORMS_SET
+    return INITLAST_INPUT
 
-
-async def norms_set(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    plants = context.user_data.get("tmp", {}).get("plants") or []
-    pairs = _parse_norm_pairs(update.message.text or "")
-    if not pairs:
-        await update.message.reply_text("Не вижу пар. Пример: 1=7, 3=4")
-        return NORMS_SET
-
-    updated = 0
-    for num, days in pairs:
-        if 1 <= num <= len(plants) and days > 0:
-            _set_norm(plants[num - 1]["id"], days)
-            updated += 1
-
-    context.user_data.pop("tmp", None)
-    await update.message.reply_text(f"Сохранила ✅ Обновлено: {updated}\n\nПроверить: /norms")
+async def init_last_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.effective_user.id
+    plants = context.user_data.get("plants_cache", [])
+    text = update.message.text or ""
+    mapping = _parse_init_lines(text, plants)
+    if not mapping:
+        await update.message.reply_text("Не распознала ни одной строки. Проверь формат, пожалуйста.")
+        return INITLAST_INPUT
+    updated = init_last_watered(user_id, mapping)
+    await update.message.reply_text(f"Инициализация завершена ✅\nОбновлено растений: {updated}")
     return ConversationHandler.END
 
-
-# /water
-async def water_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    uid = update.effective_user.id
-    plants = _get_plants(uid)
+# --- water (multi select) ---
+async def water_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.effective_user.id
+    plants = list_plants(user_id)
     if not plants:
-        await update.message.reply_text("Список пуст. Добавь растение: /add_plant")
+        await update.message.reply_text("Список пуст. /add_plant")
         return ConversationHandler.END
-    context.user_data["tmp"] = {"plants": plants}
+    context.user_data["plants_cache"] = plants
     await update.message.reply_text(
         "Что ты полила? Введи номера через запятую:\n\n"
-        + _plants_text(plants)
+        + _fmt_plants(plants)
         + "\n\nПример: 1,3,5"
     )
     return WATER_PICK
 
-
 async def water_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    uid = update.effective_user.id
-    plants = context.user_data.get("tmp", {}).get("plants") or []
-    nums = _parse_int_list(update.message.text or "")
-    nums = sorted(set([n for n in nums if 1 <= n <= len(plants)]))
-    if not nums:
-        await update.message.reply_text("Не вижу корректных номеров. Пример: 2,4,5")
+    user_id = update.effective_user.id
+    plants = context.user_data.get("plants_cache", [])
+    idxs = _parse_numbers(update.message.text or "")
+    pids = _id_by_index(plants, idxs)
+    if not pids:
+        await update.message.reply_text("Не распознала номера. Пример: 2,4,7")
         return WATER_PICK
-
-    plant_ids = [plants[n - 1]["id"] for n in nums]
-    names = [plants[n - 1]["name"] for n in nums]
-    _log_water(uid, plant_ids, datetime.now(tz=timezone.utc))
-
-    context.user_data.pop("tmp", None)
+    today = datetime.now(TZ).date()
+    n = log_watering(pids, today)
+    names = [p["name"] for p in plants if p["id"] in set(pids)]
     await update.message.reply_text(
-        "Зафиксировала полив ✅\n" + "\n".join([f"• {n}" for n in names]) + f"\n\nОбновлено: {len(names)}"
+        "Зафиксировала полив ✅\n"
+        + "\n".join([f"• {nm}" for nm in names])
+        + f"\n\nОбновлено: {n}"
     )
     return ConversationHandler.END
 
+# --- today ---
+def _format_today(overdue: List[str], today: List[str]) -> str:
+    if not overdue and not today:
+        return "Сегодня полив не нужен ✅"
+    parts = []
+    if overdue:
+        parts.append("Просрочено:")
+        parts.extend(overdue)
+    if today:
+        parts.append("\nСегодня:")
+        parts.extend(today)
+    return "\n".join(parts).strip()
 
-# ===== auto-today job =====
-async def auto_today_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-    now_local = datetime.now(TZ)
-    day_local = now_local.date()
+async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    overdue, due_today = today_due_for_user(user_id)
+    await update.message.reply_text(_format_today(overdue, due_today))
 
-    for r in _get_all_recipients():
-        user_id = int(r["user_id"])
-        chat_id = int(r["chat_id"])
-        last_sent = r["last_autotoday_sent"]
+# --- cancel ---
+async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text("Ок, отмена ✅")
+    return ConversationHandler.END
 
-        # не шлём второй раз в тот же день
-        if last_sent == day_local:
-            continue
+# =========================
+# Reminders without JobQueue (no paid/extra deps)
+# =========================
+async def _send_daily_updates(app: Application) -> None:
+    """Loop forever: every day at 11:00 IST, send /today-style update to all users."""
+    while True:
+        now = datetime.now(TZ)
+        target = datetime.combine(now.date(), time(REMINDER_HOUR, REMINDER_MINUTE), TZ)
+        if now >= target:
+            target = target + timedelta(days=1)
+        sleep_s = (target - now).total_seconds()
+        await asyncio.sleep(sleep_s)
 
-        text = _today_text(user_id)
-        await context.bot.send_message(chat_id=chat_id, text=text)
-        _mark_autotoday_sent(user_id, day_local)
+        try:
+            user_ids = get_users()
+            for uid in user_ids:
+                overdue, due_today = today_due_for_user(uid)
+                msg = _format_today(overdue, due_today)
+                await app.bot.send_message(chat_id=uid, text=msg)
+        except Exception:
+            # keep loop alive even if one send fails
+            pass
 
-
+# =========================
+# Main
+# =========================
 def main() -> None:
     ensure_schema()
 
-    token = os.environ["BOT_TOKEN"]
-    base_url = os.environ["BASE_URL"].rstrip("/")
-    port = int(os.environ.get("PORT", "10000"))
+    token = os.environ[BOT_TOKEN_ENV]
+    base_url = os.environ[BASE_URL_ENV].rstrip("/")
+    port = int(os.environ.get(PORT_ENV, "10000"))
 
     app = Application.builder().token(token).build()
 
     # commands
-    app.add_handler(CommandHandler("start", start_cmd))
-    app.add_handler(CommandHandler("plants", plants_cmd))
-    app.add_handler(CommandHandler("norms", norms_cmd))
-    app.add_handler(CommandHandler("last_watered", last_watered_cmd))
-    app.add_handler(CommandHandler("today", today_cmd))
-    app.add_handler(CommandHandler("db", db_cmd))
-    app.add_handler(CommandHandler("cancel", cancel_cmd))
+    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("plants", cmd_plants))
+    app.add_handler(CommandHandler("norms", norms_show))
+    app.add_handler(CommandHandler("today", cmd_today))
+    app.add_handler(CommandHandler("last_watered", cmd_last_watered))
+    app.add_handler(CommandHandler("db", cmd_db))
 
     # conversations
     app.add_handler(
         ConversationHandler(
-            entry_points=[CommandHandler("add_plant", add_entry)],
-            states={ADD_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_name)]},
-            fallbacks=[CommandHandler("cancel", cancel_cmd)],
+            entry_points=[CommandHandler("add_plant", add_start)],
+            states={ADD_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_got_name)]},
+            fallbacks=[CommandHandler("cancel", cmd_cancel)],
         )
     )
+
     app.add_handler(
         ConversationHandler(
-            entry_points=[CommandHandler("rename_plant", rename_entry)],
+            entry_points=[CommandHandler("rename_plant", rename_start)],
             states={
                 RENAME_PICK: [MessageHandler(filters.TEXT & ~filters.COMMAND, rename_pick)],
                 RENAME_NEW: [MessageHandler(filters.TEXT & ~filters.COMMAND, rename_new)],
             },
-            fallbacks=[CommandHandler("cancel", cancel_cmd)],
+            fallbacks=[CommandHandler("cancel", cmd_cancel)],
         )
     )
+
     app.add_handler(
         ConversationHandler(
-            entry_points=[CommandHandler("delete_plant", delete_entry)],
+            entry_points=[CommandHandler("delete_plant", delete_start)],
+            states={DELETE_PICK: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_pick)]},
+            fallbacks=[CommandHandler("cancel", cmd_cancel)],
+        )
+    )
+
+    app.add_handler(
+        ConversationHandler(
+            entry_points=[CommandHandler("set_norms", set_norms_start)],
             states={
-                DELETE_PICK: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_pick)],
-                DELETE_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_confirm)],
+                SETNORM_PICK: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_norms_pick)],
+                SETNORM_DAYS: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_norms_days)],
             },
-            fallbacks=[CommandHandler("cancel", cancel_cmd)],
+            fallbacks=[CommandHandler("cancel", cmd_cancel)],
         )
     )
+
     app.add_handler(
         ConversationHandler(
-            entry_points=[CommandHandler("set_norms", norms_entry)],
-            states={NORMS_SET: [MessageHandler(filters.TEXT & ~filters.COMMAND, norms_set)]},
-            fallbacks=[CommandHandler("cancel", cancel_cmd)],
-        )
-    )
-    app.add_handler(
-        ConversationHandler(
-            entry_points=[CommandHandler("water", water_entry)],
+            entry_points=[CommandHandler("water", water_start)],
             states={WATER_PICK: [MessageHandler(filters.TEXT & ~filters.COMMAND, water_pick)]},
-            fallbacks=[CommandHandler("cancel", cancel_cmd)],
+            fallbacks=[CommandHandler("cancel", cmd_cancel)],
         )
     )
 
-    # auto /today at 11:00 local (Asia/Kolkata)
-    # будет работать только если установлен [job-queue] (мы его добавили)
-    if app.job_queue is None:
-        print("WARN: JobQueue is None (missing job-queue extra). Auto-today disabled.")
-    else:
-        app.job_queue.run_daily(auto_today_job, time=AUTO_TODAY_AT, name="auto_today_11_ist")
+    app.add_handler(
+        ConversationHandler(
+            entry_points=[CommandHandler("init_last", init_last_start)],
+            states={INITLAST_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, init_last_input)]},
+            fallbacks=[CommandHandler("cancel", cmd_cancel)],
+        )
+    )
 
+    # start reminders loop (no JobQueue)
+    app.create_task(_send_daily_updates(app))
+
+    # webhook
     app.run_webhook(
         listen="0.0.0.0",
         port=port,
-        url_path=URL_PATH,
-        webhook_url=f"{base_url}/{URL_PATH}",
+        url_path=WEBHOOK_PATH,
+        webhook_url=f"{base_url}/{WEBHOOK_PATH}",
     )
-
 
 if __name__ == "__main__":
     main()
