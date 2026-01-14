@@ -214,13 +214,16 @@ def _rename_plant(user_id: int, plant_id: int, new_name: str) -> tuple[bool, str
                 return False, f"Имя «{new_name}» уже занято."
 
 
-def _archive_plant(user_id: int, plant_id: int) -> None:
-    with _connect() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "UPDATE plants SET archived=TRUE WHERE id=%s AND user_id=%s",
-                (plant_id, user_id),
-            )
+has_archived = _col_exists(cur, "plants", "archived")
+has_active = _col_exists(cur, "plants", "active")
+
+if has_active and not has_archived:
+    cur.execute(
+        "ALTER TABLE plants ADD COLUMN archived BOOLEAN NOT NULL DEFAULT FALSE;"
+    )
+    cur.execute("UPDATE plants SET archived = NOT active;")
+
+# НИЧЕГО не делаем, если archived уже есть
 
 
 def _set_norm(plant_id: int, days: int) -> None:
