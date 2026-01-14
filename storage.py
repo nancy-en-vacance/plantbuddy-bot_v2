@@ -1,5 +1,6 @@
 import os
 from typing import List, Tuple, Optional
+from datetime import datetime, timezone
 import psycopg
 
 DATABASE_URL = os.environ["DATABASE_URL"]
@@ -9,9 +10,24 @@ def get_conn() -> psycopg.Connection:
     return psycopg.connect(DATABASE_URL)
 
 
+def _ensure_column(cur, table: str, column: str, ddl: str) -> None:
+    cur.execute(
+        """
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = %s AND column_name = %s
+        """,
+        (table, column),
+    )
+    exists = cur.fetchone() is not None
+    if not exists:
+        cur.execute(ddl)
+
+
 def init_db() -> None:
     with get_conn() as conn:
         with conn.cursor() as cur:
+            # plants
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS plants (
@@ -20,21 +36,45 @@ def init_db() -> None:
                     name TEXT NOT NULL,
                     active BOOLEAN NOT NULL DEFAULT TRUE,
                     water_every_days INTEGER NULL,
+                    last_watered_at TIMESTAMPTZ NULL,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     UNIQUE(user_id, name)
                 );
                 """
             )
 
-            # мягкая миграция: если таблица была создана ранее без water_every_days
-            cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='plants';")
-            cols = {r[0] for r in cur.fetchall()}
-            if "water_every_days" not in cols:
-                cur.execute("ALTER TABLE plants ADD COLUMN water_every_days INTEGER NULL;")
+            # мягкая миграция (если таблица уже была)
+            _ensure_column(
+                cur,
+                "plants",
+                "water_every_days",
+                "ALTER TABLE plants ADD COLUMN water_every_days INTEGER NULL;",
+            )
+            _ensure_column(
+                cur,
+                "plants",
+                "last_watered_at",
+                "ALTER TABLE plants ADD COLUMN last_watered_at TIMESTAMPTZ NULL;",
+            )
+
+            # water_logs
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS water_logs (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    plant_id BIGINT NOT NULL REFERENCES plants(id) ON DELETE CASCADE,
+                    watered_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_water_logs_user_time ON water_logs(user_id, watered_at);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_water_logs_plant_time ON water_logs(plant_id, watered_at);")
 
         conn.commit()
 
 
+# ---------- Plants CRUD ----------
 def add_plant(user_id: int, name: str) -> bool:
     try:
         with get_conn() as conn:
@@ -82,6 +122,27 @@ def list_plants_with_norms(user_id: int, active_only: bool = True) -> List[Tuple
         name = str(r[1])
         every = int(r[2]) if r[2] is not None else None
         out.append((pid, name, every))
+    return out
+
+
+def list_plants_with_last_watered(user_id: int, active_only: bool = True) -> List[Tuple[int, str, Optional[datetime]]]:
+    query = "SELECT id, name, last_watered_at FROM plants WHERE user_id = %s"
+    params = [user_id]
+    if active_only:
+        query += " AND active = TRUE"
+    query += " ORDER BY id"
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(query, params)
+            rows = cur.fetchall()
+
+    out = []
+    for r in rows:
+        pid = int(r[0])
+        name = str(r[1])
+        last = r[2]  # datetime or None
+        out.append((pid, name, last))
     return out
 
 
@@ -136,6 +197,54 @@ def set_norm_days(user_id: int, plant_id: int, days: int) -> bool:
             updated = cur.rowcount == 1
         conn.commit()
     return updated
+
+
+# ---------- Watering ----------
+def mark_watered(user_id: int, plant_ids: List[int], watered_at: Optional[datetime] = None) -> int:
+    """
+    Обновляет last_watered_at и пишет water_logs для списка plant_ids (только активные растения этого user_id).
+    Возвращает число реально обновлённых растений.
+    """
+    if not plant_ids:
+        return 0
+
+    ts = watered_at or datetime.now(timezone.utc)
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            # берём только те plant_id, которые принадлежат user_id и active=TRUE
+            cur.execute(
+                """
+                SELECT id
+                FROM plants
+                WHERE user_id = %s AND active = TRUE AND id = ANY(%s)
+                """,
+                (user_id, plant_ids),
+            )
+            allowed = [int(r[0]) for r in cur.fetchall()]
+            if not allowed:
+                conn.commit()
+                return 0
+
+            # update last_watered_at
+            cur.execute(
+                """
+                UPDATE plants
+                SET last_watered_at = %s
+                WHERE user_id = %s AND active = TRUE AND id = ANY(%s)
+                """,
+                (ts, user_id, allowed),
+            )
+
+            # insert logs
+            cur.executemany(
+                "INSERT INTO water_logs (user_id, plant_id, watered_at) VALUES (%s, %s, %s);",
+                [(user_id, pid, ts) for pid in allowed],
+            )
+
+        conn.commit()
+
+    return len(allowed)
 
 
 def count_plants(user_id: int) -> int:
