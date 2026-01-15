@@ -55,29 +55,27 @@ def list_plants(user_id: int) -> List[Tuple[int, str]]:
         return cur.fetchall()
 
 
-def rename_plant(user_id: int, plant_id: int, new_name: str) -> bool:
-    """
-    Переименовать растение (только active=TRUE).
-    Возвращает True если обновилось, иначе False.
-    False может означать: нет такого plant_id у юзера, растение не активно,
-    или имя уже занято (UNIQUE(user_id, name)).
-    """
-    new_name = (new_name or "").strip()
-    if not new_name:
-        return False
 
-    try:
-        with get_conn() as conn, conn.cursor() as cur:
-            cur.execute("""
-            UPDATE plants
-            SET name=%s
-            WHERE id=%s AND user_id=%s AND active=TRUE
-            """, (new_name, plant_id, user_id))
-            conn.commit()
-            return cur.rowcount == 1
-    except psycopg.errors.UniqueViolation:
-        # имя уже есть у этого user_id
-        return False
+
+def list_plants_archived(user_id: int) -> List[Tuple[int, str]]:
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute("""
+        SELECT id, name FROM plants
+        WHERE user_id=%s AND active=FALSE
+        ORDER BY id
+        """, (user_id,))
+        return cur.fetchall()
+
+
+def set_active(user_id: int, plant_id: int, active: bool) -> bool:
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute("""
+        UPDATE plants
+        SET active=%s
+        WHERE id=%s AND user_id=%s
+        """, (active, plant_id, user_id))
+        conn.commit()
+        return cur.rowcount == 1
 
 
 def set_norm(user_id: int, plant_id: int, days: int) -> bool:
