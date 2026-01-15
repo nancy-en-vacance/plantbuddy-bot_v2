@@ -55,6 +55,31 @@ def list_plants(user_id: int) -> List[Tuple[int, str]]:
         return cur.fetchall()
 
 
+def rename_plant(user_id: int, plant_id: int, new_name: str) -> bool:
+    """
+    Переименовать растение (только active=TRUE).
+    Возвращает True если обновилось, иначе False.
+    False может означать: нет такого plant_id у юзера, растение не активно,
+    или имя уже занято (UNIQUE(user_id, name)).
+    """
+    new_name = (new_name or "").strip()
+    if not new_name:
+        return False
+
+    try:
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+            UPDATE plants
+            SET name=%s
+            WHERE id=%s AND user_id=%s AND active=TRUE
+            """, (new_name, plant_id, user_id))
+            conn.commit()
+            return cur.rowcount == 1
+    except psycopg.errors.UniqueViolation:
+        # имя уже есть у этого user_id
+        return False
+
+
 def set_norm(user_id: int, plant_id: int, days: int) -> bool:
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("""
