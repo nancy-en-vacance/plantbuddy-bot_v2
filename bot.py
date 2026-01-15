@@ -96,7 +96,7 @@ async def cmd_plants(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not rows:
         await update.message.reply_text("Пока пусто! Добавим растение через /add_plant?")
     else:
-        await update.message.reply_text("Твои растения 🥰\n\n" + format_plants(rows))
+        await update.message.reply_text("Твои растения🥰\n\n" + format_plants(rows))
 
 
 async def cmd_add_plant(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -123,7 +123,7 @@ async def cmd_set_norms(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_norms(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rows = get_norms(update.effective_user.id)
     if not rows:
-        await update.message.reply_text("Нормы пока не заданы 🤔\nХочешь — сделаем через /set_norms")
+        await update.message.reply_text("Нормы пока не заданы🤔\nХочешь — сделаем через /set_norms")
     else:
         await update.message.reply_text("Твои нормы полива💧\n\n" + format_norms(rows))
 
@@ -182,7 +182,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ok = set_norm(user_id, plant_id, days)
         context.user_data.clear()
         if ok:
-            await update.message.reply_text(f"Норма для «{plant_name}» — раз в {days} дн. ✅")
+            await update.message.reply_text(f"Норма для «{plant_name}» — раз в {days} дн.✅")
         else:
             await update.message.reply_text("Хм, не получилось поставить норму🤔 Попробуй ещё раз: /set_norms")
         return
@@ -199,7 +199,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     ids.append(rows[idx][0])
         if ids:
             log_water_many(user_id, ids, datetime.now(TZ))
-            await update.message.reply_text("Полив отметила 💧✅")
+            await update.message.reply_text("Полив отметила💧✅")
             context.user_data.clear()
         else:
             await update.message.reply_text("Я не смогла распознать номера😅\nПример: 1,3\nЕсли передумала — /cancel")
@@ -208,28 +208,33 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------- auto today ----------
 async def auto_today_loop(app: Application):
-    await app.bot.wait_until_ready()
+    # NOTE: currently disabled; enable by scheduling from post_init
+    # python-telegram-bot 20.x doesn't have bot.wait_until_ready().
+    # Do a lightweight API call once; even if it fails, keep the loop alive.
+    try:
+        await app.bot.get_me()
+    except Exception:
+        pass
+
     while True:
         now = datetime.now(TZ)
         target = now.replace(hour=AUTO_HOUR, minute=0, second=0, microsecond=0)
         if target <= now:
             target += timedelta(days=1)
+
         await asyncio.sleep((target - now).total_seconds())
 
-        # single-user bot: берем первого пользователя из БД
-        # db_check уже гарантирует существование пользователя после /start
-        # используем today без chat_id, пользователь один
         try:
-            # compute_today требует user_id → используем last known
-            # simplest: пропускаем авто, если некому слать
+            # TODO: auto-today is intentionally disabled for now (single-user + no chat_id persistence)
             pass
-        finally:
-            await asyncio.sleep(24 * 60 * 60)
+        except Exception as e:
+            # Don't let the background task die silently
+            print(f"[auto_today_loop] error: {e!r}")
 
 
 async def post_init(app: Application):
-    asyncio.create_task(auto_today_loop(app))
-
+    # auto-today loop temporarily disabled (no background tasks)
+    return
 
 # ---------- main ----------
 def main():
