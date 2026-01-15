@@ -48,19 +48,19 @@ def format_today(res):
     overdue, today_list, unknown = res
     lines = []
     if overdue:
-        lines.append("⚠️ Просрочено:")
+        lines.append("⚠️Просрочено:")
         for name, days in overdue:
             lines.append(f"— {name} ({days} дн.)")
     if today_list:
-        lines.append("⏰ Сегодня:")
+        lines.append("⏰Сегодня:")
         for name in today_list:
             lines.append(f"— {name}")
     if unknown:
-        lines.append("ℹ️ Нужно настроить:")
+        lines.append("ℹ️Нужно настроить:")
         for name in unknown:
             lines.append(f"— {name}")
     if not overdue and not today_list:
-        lines.append("Сегодня поливать ничего не нужно 😉")
+        lines.append("Сегодня поливать ничего не нужно😉")
     return "\n".join(lines)
 
 
@@ -68,7 +68,7 @@ def format_today(res):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🌱 PlantBuddy\n"
-        "Бот, который помнит, когда поливать растения\n\n"
+        "Помню, когда поливать твои растения\n\n"
         "Команды:\n"
         "/add_plant — добавить растение\n"
         "/plants — список активных\n"
@@ -83,18 +83,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
-    await update.message.reply_text("Ок, отменили ✅ Что делаем дальше? 🙂")
+    await update.message.reply_text("Ок, отменили✅ Что делаем дальше?🙂")
 
 
 async def cmd_db(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cnt = db_check(update.effective_user.id)
-    await update.message.reply_text(f"База жива ✅ У тебя растений: {cnt}")
+    await update.message.reply_text(f"База жива✅ У тебя растений: {cnt}")
 
 
 async def cmd_plants(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rows = list_plants(update.effective_user.id)
     if not rows:
-        await update.message.reply_text("Пока пусто 🌿 Добавим растение через /add_plant")
+        await update.message.reply_text("Пока пусто! Добавим растение через /add_plant?")
     else:
         await update.message.reply_text("Твои растения 🥰\n\n" + format_plants(rows))
 
@@ -102,13 +102,13 @@ async def cmd_plants(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_add_plant(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     context.user_data["await_add_plant"] = True
-    await update.message.reply_text("Как назовём растение? 🌱\nНапиши одним сообщением (например: Калатея)")
+    await update.message.reply_text("Как назовём растение?🌱\nНапиши одним сообщением (например: Калатея)")
 
 
 async def cmd_set_norms(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rows = list_plants(update.effective_user.id)
     if not rows:
-        await update.message.reply_text("Сначала добавим хотя бы одно растение 👇🏻\nКоманда: /add_plant")
+        await update.message.reply_text("Сначала добавим хотя бы одно растение👇🏻\nКоманда: /add_plant")
         return
     context.user_data.clear()
     context.user_data["await_set_norm"] = True
@@ -125,18 +125,18 @@ async def cmd_norms(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not rows:
         await update.message.reply_text("Нормы пока не заданы 🤔\nХочешь — сделаем через /set_norms")
     else:
-        await update.message.reply_text("Твои нормы полива 💧\n\n" + format_norms(rows))
+        await update.message.reply_text("Твои нормы полива💧\n\n" + format_norms(rows))
 
 
 async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     res = compute_today(update.effective_user.id, date.today())
-    await update.message.reply_text("План на сегодня\n\n" + format_today(res))
+    await update.message.reply_text("План на сегодня:\n\n" + format_today(res))
 
 
 async def cmd_water(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rows = list_plants(update.effective_user.id)
     if not rows:
-        await update.message.reply_text("У тебя пока нет растений 🌿\nДобавь через /add_plant")
+        await update.message.reply_text("У тебя пока нет растений🌿\nДобавь через /add_plant")
         return
     context.user_data.clear()
     context.user_data["await_water"] = True
@@ -156,7 +156,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("await_add_plant"):
         name = text.strip()
         if not name:
-            await update.message.reply_text("Хм, пустое имя 🤔\nНапиши название растения, например: Фикус")
+            await update.message.reply_text("Хм, пустое имя🤔\nНапиши название растения, например: Фикус")
             return
         add_plant(user_id, name)
         context.user_data.clear()
@@ -167,16 +167,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("await_set_norm"):
         parts = text.split()
         if len(parts) != 2 or not parts[0].isdigit() or not parts[1].isdigit():
-            await update.message.reply_text("Я не поняла формат 😅\nПример: 2 5 (номер и дни)")
+            await update.message.reply_text("Я не поняла формат😅\nПример: 2 5 (номер и дни)")
             return
         idx = int(parts[0]) - 1
         days = int(parts[1])
         if days <= 0 or days > 365:
-            await update.message.reply_text("Дни выглядят странно 🤔\nДавай число от 1 до 365 (например: 7)")
+            await update.message.reply_text("Дни выглядят странно🤔\nДавай число от 1 до 365 (например: 7)")
             return
         rows = list_plants(user_id)
         if not (0 <= idx < len(rows)):
-            await update.message.reply_text("Кажется, такого номера нет 🤔\nПроверь список и попробуй ещё раз")
+            await update.message.reply_text("Кажется, такого номера нет🤔\nПроверь список и попробуй ещё раз")
             return
         plant_id, plant_name = rows[idx]
         ok = set_norm(user_id, plant_id, days)
@@ -184,7 +184,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if ok:
             await update.message.reply_text(f"Норма для «{plant_name}» — раз в {days} дн. ✅")
         else:
-            await update.message.reply_text("Хм, не получилось поставить норму 🤔 Попробуй ещё раз: /set_norms")
+            await update.message.reply_text("Хм, не получилось поставить норму🤔 Попробуй ещё раз: /set_norms")
         return
 
     # --- water flow ---
@@ -202,7 +202,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Полив отметила 💧✅")
             context.user_data.clear()
         else:
-            await update.message.reply_text("Я не смогла распознать номера 😅\nПример: 1,3\nЕсли передумала — /cancel")
+            await update.message.reply_text("Я не смогла распознать номера😅\nПример: 1,3\nЕсли передумала — /cancel")
         return
 
 
