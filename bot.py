@@ -53,8 +53,8 @@ class UX:
 
     # --- generic blocks ---
     START = (
-        "🌱 <b>PlantBuddy</b>\n"
-        "Помню, когда поливать твои растения 🌿\n\n"
+        "🌱<b>PlantBuddy</b>\n"
+        "<b>Помню, когда поливать твои растения🌿</b>\n\n"
         "/add_plant — добавить растение\n"
         "/plants — список активных\n"
         "/rename_plant — переименовать\n"
