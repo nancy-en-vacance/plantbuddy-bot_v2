@@ -60,15 +60,15 @@ def format_today(res):
         for name in unknown:
             lines.append(f"— {name}")
     if not overdue and not today_list:
-        lines.append("Сегодня поливать ничего не нужно 🌿")
+        lines.append("Сегодня поливать ничего не нужно 😉")
     return "\n".join(lines)
 
 
 # ---------- commands ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "PlantBuddy 🌱\n"
-        "Я помогу не забывать про полив.\n\n"
+        "🌱 PlantBuddy\n"
+        "Бот, который помнит, когда поливать растения\n\n"
         "Команды:\n"
         "/add_plant — добавить растение\n"
         "/plants — список активных\n"
@@ -96,7 +96,7 @@ async def cmd_plants(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not rows:
         await update.message.reply_text("Пока пусто 🌿 Добавим растение через /add_plant")
     else:
-        await update.message.reply_text("Вот твои активные растения 🌿\n\n" + format_plants(rows))
+        await update.message.reply_text("Твои растения 🥰\n\n" + format_plants(rows))
 
 
 async def cmd_add_plant(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -108,7 +108,7 @@ async def cmd_add_plant(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_set_norms(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rows = list_plants(update.effective_user.id)
     if not rows:
-        await update.message.reply_text("Сначала добавим хотя бы одно растение 🌿\nКоманда: /add_plant")
+        await update.message.reply_text("Сначала добавим хотя бы одно растение 👇🏻\nКоманда: /add_plant")
         return
     context.user_data.clear()
     context.user_data["await_set_norm"] = True
@@ -116,7 +116,7 @@ async def cmd_set_norms(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Ок, зададим норму полива 💧\n\n"
         f"{format_plants(rows)}\n\n"
         "Введи так: номер дни\n"
-        "Например: 2 5 (это значит раз в 5 дней)"
+        "Например: 2 5 (раз в 5 дней)"
     )
 
 
@@ -130,7 +130,7 @@ async def cmd_norms(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     res = compute_today(update.effective_user.id, date.today())
-    await update.message.reply_text("Сегодня по плану вот так 🌿\n\n" + format_today(res))
+    await update.message.reply_text("План на сегодня\n\n" + format_today(res))
 
 
 async def cmd_water(update: Update, context: ContextTypes.DEFAULT_TYPE):
