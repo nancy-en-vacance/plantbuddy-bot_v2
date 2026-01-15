@@ -1,14 +1,16 @@
-# bot.py — v4 full (archive + restore + centralized UX, auto tasks disabled)
+# bot.py — v5 full (inline buttons for /water + quick action from /today)
 import os
 import html as _html
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
+from typing import Dict, Set, Optional, Tuple, List
 
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
+    CallbackQueryHandler,
     ContextTypes,
     filters,
 )
@@ -45,7 +47,6 @@ class UX:
 
     @staticmethod
     def plants_list(rows) -> str:
-        # rows: List[(id, name)]
         lines = []
         for i, (_, name) in enumerate(rows, start=1):
             lines.append(f"{i}. {UX._esc(name)}")
@@ -68,18 +69,18 @@ class UX:
         "/cancel — отменить действие"
     )
 
-    CANCEL_OK = "<b>Ок, отменили ✅</b>\n\nНичего не делаем."
+    CANCEL_OK = "<b>Ок, отменили✅</b>\n\nНичего не делаем."
 
     @staticmethod
     def db_ok(count: int) -> str:
-        return f"<b>DB OK</b> 🌿\nРастений в базе: {count}"
+        return f"<b>DB OK</b>🌿\nРастений в базе: {count}"
 
     EMPTY_LIST = "Список пуст."
 
     # --- plants ---
     @staticmethod
     def plants(rows) -> str:
-        return "<b>Твои растения 🌿</b>\n\n" + UX.plants_list(rows)
+        return "<b>Твои растения🌿</b>\n\n" + UX.plants_list(rows)
 
     # --- add plant ---
     ADD_PROMPT = (
@@ -88,13 +89,13 @@ class UX:
         "Если передумала — /cancel"
     )
     ADD_DONE = "<b>Готово 🌱</b>\n\nРастение добавила."
-    ADD_EMPTY = "<b>Хм, пусто 🤔</b>\n\nНапиши название растения.\n\nЕсли передумала — /cancel"
+    ADD_EMPTY = "<b>Хм, пусто🤔</b>\n\nНапиши название растения.\n\nЕсли передумала — /cancel"
 
     # --- rename plant ---
     @staticmethod
     def rename_prompt(rows) -> str:
         return (
-            "<b>Какое растение переименовать? ✏️</b>\n\n"
+            "<b>Какое растение переименовать?✏️</b>\n\n"
             f"{UX.plants_list(rows)}\n\n"
             "Напиши так:\n"
             "номер новое_название\n"
@@ -103,13 +104,13 @@ class UX:
         )
 
     RENAME_BAD_FORMAT = (
-        "<b>Хм, я не поняла 🤔</b>\n\n"
+        "<b>Хм, я не поняла🤔</b>\n\n"
         "Попробуй так:\n<i>2 Спатифиллум большой</i>\n\n"
         "Если передумала — /cancel"
     )
-    RENAME_NO_SUCH = "<b>Хм, такого номера нет 🤔</b>\n\nПроверь список выше."
-    RENAME_DONE = "<b>Готово 🌱</b>\n\nРастение переименовала."
-    RENAME_FAIL = "<b>Не получилось 🤔</b>\n\nВозможно, такое имя уже есть."
+    RENAME_NO_SUCH = "<b>Хм, такого номера нет🤔</b>\n\nПроверь список выше."
+    RENAME_DONE = "<b>Готово🌱</b>\n\nРастение переименовала."
+    RENAME_FAIL = "<b>Не получилось🤔</b>\n\nВозможно, такое имя уже есть."
 
     # --- set norms ---
     @staticmethod
@@ -124,12 +125,12 @@ class UX:
         )
 
     NORM_BAD_FORMAT = (
-        "<b>Хм, я не поняла 🤔</b>\n\n"
+        "<b>Хм, я не поняла🤔</b>\n\n"
         "Попробуй так:\n<i>1 5</i>\n\n"
         "Если передумала — /cancel"
     )
-    NORM_NO_SUCH = "<b>Такого номера нет 🤔</b>"
-    NORM_DONE = "<b>Готово 🌱</b>\n\nНорму сохранила."
+    NORM_NO_SUCH = "<b>Такого номера нет🤔</b>"
+    NORM_DONE = "<b>Готово🌱</b>\n\nНорму сохранила."
 
     # --- norms list ---
     @staticmethod
@@ -147,14 +148,14 @@ class UX:
         lines = ["🌿 <b>Сегодня по растениям</b>\n"]
 
         if today_list:
-            lines.append("⏰ <b>Пора полить:</b>")
+            lines.append("⏰<b>Пора полить:</b>")
             lines.append("<i>")
             for name in today_list:
                 lines.append(f"• {UX._esc(name)}")
             lines.append("</i>\n")
 
         if overdue:
-            lines.append("⚠️ <b>Просрочено:</b>")
+            lines.append("⚠️<b>Просрочено:</b>")
             lines.append("<i>")
             for name, days in overdue:
                 lines.append(f"• {UX._esc(name)} — {int(days)} дн.")
@@ -170,15 +171,15 @@ class UX:
         if not (today_list or overdue or unknown):
             return (
                 "🌿 <b>Сегодня по растениям</b>\n\n"
-                "Сегодня можно выдохнуть 😌\n"
+                "Сегодня можно выдохнуть😌\n"
                 "Поливать ничего не нужно"
             )
 
         return "\n".join(lines).strip()
 
-    # --- water ---
+    # --- water text fallback ---
     @staticmethod
-    def water_prompt(rows) -> str:
+    def water_prompt_text(rows) -> str:
         return (
             "<b>Какие растения полила? 💧</b>\n\n"
             f"{UX.plants_list(rows)}\n\n"
@@ -187,13 +188,13 @@ class UX:
         )
 
     WATER_DONE = "<b>Готово 💧</b>\n\nПолив отметила."
-    WATER_BAD = "<b>Хм, я не поняла 🤔</b>\n\nПопробуй так:\n<i>1,3</i>"
+    WATER_BAD = "<b>Хм, я не поняла🤔</b>\n\nПопробуй так:\n<i>1,3</i>"
 
     # --- archive ---
     @staticmethod
     def archive_prompt(rows) -> str:
         return (
-            "<b>Хочешь убрать растение из активных? 🗂️</b>\n\n"
+            "<b>Хочешь убрать растение из активных?🗂️</b>\n\n"
             f"{UX.plants_list(rows)}\n\n"
             "Напиши номера через запятую (например: 2)\n\n"
             "Если передумала — /cancel"
@@ -204,29 +205,67 @@ class UX:
     @staticmethod
     def archive_done(n: int) -> str:
         if n == 1:
-            return "<b>Готово 🌱</b>\n\nРастение убрала в архив."
+            return "<b>Готово🌱</b>\n\nРастение убрала в архив."
         if 2 <= n <= 4:
-            return f"<b>Готово 🌱</b>\n\nУбрала в архив {n} растения."
-        return f"<b>Готово 🌱</b>\n\nУбрала в архив {n} растений."
+            return f"<b>Готово🌱</b>\n\nУбрала в архив {n} растения."
+        return f"<b>Готово🌱</b>\n\nУбрала в архив {n} растений."
 
     @staticmethod
     def archived_list(rows) -> str:
-        return "<b>Растения в архиве 🗂️</b>\n\n" + UX.plants_list(rows)
+        return "<b>Растения в архиве🗂️</b>\n\n" + UX.plants_list(rows)
 
-    NO_ARCHIVED = "<b>В архиве пока пусто 🗂️</b>"
+    NO_ARCHIVED = "<b>В архиве пока пусто🗂️</b>"
 
     # --- restore ---
     @staticmethod
     def restore_prompt(rows) -> str:
         return (
-            "<b>Хочешь вернуть растение из архива? 🌿</b>\n\n"
+            "<b>Хочешь вернуть растение из архива?🌿</b>\n\n"
             f"{UX.plants_list(rows)}\n\n"
             "Напиши номера через запятую (например: 1)\n\n"
             "Если передумала — /cancel"
         )
 
-    RESTORE_BAD = "<b>Хм, я не поняла 🤔</b>\n\nПопробуй так:\n<i>1</i>"
-    RESTORE_DONE = "<b>Готово 🌱</b>\n\nРастение снова активное."
+    RESTORE_BAD = "<b>Хм, я не поняла🤔</b>\n\nПопробуй так:\n<i>1</i>"
+    RESTORE_DONE = "<b>Готово🌱</b>\n\nРастение снова активное."
+
+
+# =========================
+# Inline keyboard: /water selection
+# =========================
+CB_W_TOGGLE = "w:tg"   # w:tg:<plant_id>
+CB_W_DONE = "w:dn"     # w:dn
+CB_W_CANCEL = "w:cn"   # w:cn
+
+def _water_state_key() -> str:
+    return "water_sel_ids"
+
+def _water_rows_key() -> str:
+    return "water_rows_cache"
+
+def _get_water_selected(context: ContextTypes.DEFAULT_TYPE) -> Set[int]:
+    return set(context.user_data.get(_water_state_key(), set()))
+
+def _set_water_selected(context: ContextTypes.DEFAULT_TYPE, ids: Set[int]):
+    context.user_data[_water_state_key()] = set(ids)
+
+def _cache_water_rows(context: ContextTypes.DEFAULT_TYPE, rows: List[Tuple[int, str]]):
+    # keep minimal cache to render buttons without requery on toggle
+    context.user_data[_water_rows_key()] = rows
+
+def _get_cached_water_rows(context: ContextTypes.DEFAULT_TYPE) -> Optional[List[Tuple[int, str]]]:
+    return context.user_data.get(_water_rows_key())
+
+def build_water_keyboard(rows: List[Tuple[int, str]], selected: Set[int]) -> InlineKeyboardMarkup:
+    buttons = []
+    for pid, name in rows:
+        mark = "✅ " if pid in selected else ""
+        buttons.append([InlineKeyboardButton(f"{mark}{name}", callback_data=f"{CB_W_TOGGLE}:{pid}")])
+    buttons.append([
+        InlineKeyboardButton("✅Готово", callback_data=CB_W_DONE),
+        InlineKeyboardButton("❌Отмена", callback_data=CB_W_CANCEL),
+    ])
+    return InlineKeyboardMarkup(buttons)
 
 
 # =========================
@@ -290,7 +329,11 @@ async def cmd_norms(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     res = compute_today(update.effective_user.id, date.today())
-    await update.message.reply_text(UX.today(res), parse_mode=UX.PARSE_MODE)
+    text = UX.today(res)
+
+    # Add quick action button to open /water selection (no selection yet)
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("💧Отметить полив", callback_data="go:water")]])
+    await update.message.reply_text(text, parse_mode=UX.PARSE_MODE, reply_markup=keyboard)
 
 
 async def cmd_water(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -298,9 +341,23 @@ async def cmd_water(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not rows:
         await update.message.reply_text(UX.EMPTY_LIST)
         return
+
     context.user_data.clear()
-    context.user_data["await_water"] = True
-    await update.message.reply_text(UX.water_prompt(rows), parse_mode=UX.PARSE_MODE)
+    context.user_data["await_water_buttons"] = True
+    _cache_water_rows(context, rows)
+    _set_water_selected(context, set())
+
+    await update.message.reply_text(
+        "<b>Какие растения полила?💧</b>\n\nВыбери из списка ниже👇",
+        parse_mode=UX.PARSE_MODE,
+        reply_markup=build_water_keyboard(rows, set()),
+    )
+
+    # text fallback hint
+    await update.message.reply_text(
+        "Если удобнее текстом — напиши номера через запятую (например: 1,3)\n\nЕсли передумала — /cancel",
+        parse_mode=UX.PARSE_MODE,
+    )
 
 
 async def cmd_archive(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -341,7 +398,6 @@ def _parse_indices_csv(text: str, n_rows: int):
             i = int(p) - 1
             if 0 <= i < n_rows:
                 idxs.append(i)
-    # remove duplicates, keep order
     seen = set()
     out = []
     for i in idxs:
@@ -349,6 +405,84 @@ def _parse_indices_csv(text: str, n_rows: int):
             seen.add(i)
             out.append(i)
     return out
+
+
+# ---------- callbacks ----------
+async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    if not q:
+        return
+    await q.answer()
+    data = q.data or ""
+
+    # quick action from /today
+    if data == "go:water":
+        rows = list_plants(update.effective_user.id)
+        if not rows:
+            await q.edit_message_text("Список пуст.", parse_mode=UX.PARSE_MODE)
+            return
+        context.user_data.clear()
+        context.user_data["await_water_buttons"] = True
+        _cache_water_rows(context, rows)
+        _set_water_selected(context, set())
+        await q.edit_message_reply_markup(reply_markup=build_water_keyboard(rows, set()))
+        # also adjust message text slightly if possible
+        try:
+            await q.edit_message_text(
+                "<b>Какие растения полила? 💧</b>\n\nВыбери из списка ниже👇",
+                parse_mode=UX.PARSE_MODE,
+                reply_markup=build_water_keyboard(rows, set()),
+            )
+        except Exception:
+            # message might be not editable; ignore
+            pass
+        return
+
+    # water selection toggles
+    if data.startswith(f"{CB_W_TOGGLE}:"):
+        if not context.user_data.get("await_water_buttons"):
+            return
+        try:
+            pid = int(data.split(":")[-1])
+        except Exception:
+            return
+
+        selected = _get_water_selected(context)
+        if pid in selected:
+            selected.remove(pid)
+        else:
+            selected.add(pid)
+        _set_water_selected(context, selected)
+
+        rows = _get_cached_water_rows(context) or list_plants(update.effective_user.id)
+        _cache_water_rows(context, rows)
+
+        await q.edit_message_reply_markup(reply_markup=build_water_keyboard(rows, selected))
+        return
+
+    if data == CB_W_CANCEL:
+        context.user_data.clear()
+        try:
+            await q.edit_message_text(UX.CANCEL_OK, parse_mode=UX.PARSE_MODE)
+        except Exception:
+            await q.message.reply_text(UX.CANCEL_OK, parse_mode=UX.PARSE_MODE)
+        return
+
+    if data == CB_W_DONE:
+        if not context.user_data.get("await_water_buttons"):
+            return
+        selected = _get_water_selected(context)
+        if not selected:
+            await q.message.reply_text("<b>Выбери хотя бы одно растение🤔</b>", parse_mode=UX.PARSE_MODE)
+            return
+
+        log_water_many(update.effective_user.id, list(selected), datetime.now(TZ))
+        context.user_data.clear()
+        try:
+            await q.edit_message_text(UX.WATER_DONE, parse_mode=UX.PARSE_MODE)
+        except Exception:
+            await q.message.reply_text(UX.WATER_DONE, parse_mode=UX.PARSE_MODE)
+        return
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -408,15 +542,15 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(UX.NORM_DONE, parse_mode=UX.PARSE_MODE)
         return
 
-    # --- water ---
-    if context.user_data.get("await_water"):
+    # --- water text fallback (also works if buttons are active) ---
+    if context.user_data.get("await_water_buttons"):
         rows = list_plants(update.effective_user.id)
         idxs = _parse_indices_csv(text, len(rows))
         ids = [rows[i][0] for i in idxs]
-        context.user_data.clear()
 
         if ids:
             log_water_many(update.effective_user.id, ids, datetime.now(TZ))
+            context.user_data.clear()
             await update.message.reply_text(UX.WATER_DONE, parse_mode=UX.PARSE_MODE)
         else:
             await update.message.reply_text(UX.WATER_BAD, parse_mode=UX.PARSE_MODE)
@@ -430,7 +564,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.clear()
 
         if not ids:
-            await update.message.reply_text(UX.WATER_BAD, parse_mode=UX.PARSE_MODE)  # same "1,3" hint fits
+            await update.message.reply_text(UX.WATER_BAD, parse_mode=UX.PARSE_MODE)
             return
 
         n = 0
@@ -477,6 +611,7 @@ def main():
     app.add_handler(CommandHandler("restore", cmd_restore))
     app.add_handler(CommandHandler("db", cmd_db))
 
+    app.add_handler(CallbackQueryHandler(on_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     app.run_webhook(
