@@ -18,6 +18,7 @@ from storage import (
     init_db,
     add_plant,
     list_plants,
+    rename_plant,
     set_norm,
     get_norms,
     log_water_many,
@@ -67,6 +68,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Команды:\n"
         "/add_plant — добавить растение\n"
         "/plants — список растений\n"
+        "/rename_plant — переименовать растение\n"
         "/set_norms — задать норму\n"
         "/norms — показать нормы\n"
         "/today — что поливать сегодня\n"
@@ -102,27 +104,78 @@ async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_water(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear()
     context.user_data["await_water"] = True
     await update.message.reply_text("Введи номера растений через запятую (например: 1,3)")
 
 
-async def handle_water(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.user_data.get("await_water"):
-        return
-    nums = update.message.text.replace(" ", "").split(",")
+async def cmd_rename(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rows = list_plants(update.effective_user.id)
-    ids = []
-    for n in nums:
-        if n.isdigit():
-            idx = int(n) - 1
-            if 0 <= idx < len(rows):
-                ids.append(rows[idx][0])
-    if ids:
-        log_water_many(update.effective_user.id, ids, datetime.now(TZ))
-        await update.message.reply_text("Полив отмечен ✅")
-    else:
-        await update.message.reply_text("Не удалось распознать номера.")
+    if not rows:
+        await update.message.reply_text("Список пуст. Сначала добавь растения через /add_plant.")
+        return
+
     context.user_data.clear()
+    context.user_data["await_rename"] = True
+
+    await update.message.reply_text(
+        "Ок, что переименовать?\n\n"
+        f"{format_plants(rows)}\n\n"
+        "Введи так:\n"
+        "номер новое_имя\n"
+        "Например:\n"
+        "2 Спатифиллум большой"
+    )
+
+
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # --- rename flow ---
+    if context.user_data.get("await_rename"):
+        text = (update.message.text or "").strip()
+        if not text:
+            await update.message.reply_text("Пусто. Введи: номер новое_имя (например: 2 Спатифиллум большой)")
+            return
+
+        parts = text.split(maxsplit=1)
+        if len(parts) < 2 or not parts[0].isdigit():
+            await update.message.reply_text("Формат такой: номер новое_имя (например: 2 Спатифиллум большой)")
+            return
+
+        idx = int(parts[0]) - 1
+        new_name = parts[1].strip()
+
+        rows = list_plants(update.effective_user.id)
+        if not (0 <= idx < len(rows)):
+            await update.message.reply_text("Нет такого номера. Проверь /plants и попробуй ещё раз.")
+            return
+
+        plant_id = rows[idx][0]
+        ok = rename_plant(update.effective_user.id, plant_id, new_name)
+        if ok:
+            await update.message.reply_text("Переименовано ✅")
+        else:
+            await update.message.reply_text("Не получилось переименовать (возможно, такое имя уже есть).")
+
+        context.user_data.clear()
+        return
+
+    # --- water flow ---
+    if context.user_data.get("await_water"):
+        nums = (update.message.text or "").replace(" ", "").split(",")
+        rows = list_plants(update.effective_user.id)
+        ids = []
+        for n in nums:
+            if n.isdigit():
+                idx = int(n) - 1
+                if 0 <= idx < len(rows):
+                    ids.append(rows[idx][0])
+        if ids:
+            log_water_many(update.effective_user.id, ids, datetime.now(TZ))
+            await update.message.reply_text("Полив отмечен ✅")
+        else:
+            await update.message.reply_text("Не удалось распознать номера.")
+        context.user_data.clear()
+        return
 
 
 # ---------- auto today ----------
@@ -135,12 +188,8 @@ async def auto_today_loop(app: Application):
             target += timedelta(days=1)
         await asyncio.sleep((target - now).total_seconds())
 
-        # single-user bot: берем первого пользователя из БД
-        # db_check уже гарантирует существование пользователя после /start
-        # используем today без chat_id, пользователь один
+        # single-user bot: пока отключено (нет стабильного источника chat_id)
         try:
-            # compute_today требует user_id → используем last known
-            # simplest: пропускаем авто, если некому слать
             pass
         finally:
             await asyncio.sleep(24 * 60 * 60)
@@ -163,11 +212,12 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("plants", cmd_plants))
+    app.add_handler(CommandHandler("rename_plant", cmd_rename))
     app.add_handler(CommandHandler("norms", cmd_norms))
     app.add_handler(CommandHandler("today", cmd_today))
     app.add_handler(CommandHandler("water", cmd_water))
     app.add_handler(CommandHandler("db", cmd_db))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_water))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     app.run_webhook(
         listen="0.0.0.0",
