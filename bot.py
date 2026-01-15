@@ -5,6 +5,10 @@ from datetime import datetime, date
 from zoneinfo import ZoneInfo
 from typing import Set, Optional, Tuple, List
 
+import asyncio
+import base64
+from openai import OpenAI
+
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -32,12 +36,17 @@ from storage import (
     list_plants_archived,
     set_active,
     add_plant_photo,
+    get_plant_context,
+    get_last_photo_for_plant,
 )
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 BASE_URL = os.environ["BASE_URL"].rstrip("/")
 PORT = int(os.environ.get("PORT", "10000"))
 TZ = ZoneInfo("Asia/Kolkata")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4.1-mini")
+_openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 
 # =========================
@@ -226,7 +235,12 @@ class UX:
     # --- photo flow ---
     PHOTO_CHOOSE = "<b>К какому растению это фото? 📸</b>\n\nВыбери из списка ниже 👇"
     PHOTO_SEND = "<b>Ок 👌</b>\n\nТеперь пришли фото этого растения 📸\n\nЕсли передумала — /cancel"
-    PHOTO_SAVED = "<b>Приняла 📸</b>\n\nФото сохранила. Анализ добавим чуть позже 🌿"
+    PHOTO_SAVED = "<b>Приняла 📸</b>\n\nФото сохранила."
+    PHOTO_ANALYZE_OFFER = "Хочешь — могу прямо сейчас прикинуть, что с растением 🧠"
+    ANALYZE_WORKING = "<b>Смотрю фото 🧠</b>\n\nСекундочку."
+    ANALYZE_NO_PHOTO = "<b>У меня нет фото для анализа 🤔</b>\n\nСначала пришли фото через /photo."
+    ANALYZE_NO_KEY = "<b>Нужен ключ OpenAI 🤔</b>\n\nДобавь переменную окружения <i>OPENAI_API_KEY</i> на Render."
+    ANALYZE_ERROR = "<b>Упс 🤔</b>\n\nНе получилось проанализировать фото. Попробуй ещё раз чуть позже."
     PHOTO_EXPECTED = "<b>Жду фото 📸</b>\n\nПришли фото растения.\n\nЕсли передумала — /cancel"
 
 
@@ -306,6 +320,17 @@ def build_photo_keyboard(rows: List[Tuple[int, str]]) -> InlineKeyboardMarkup:
         grid.append(row_buf)
     grid.append([InlineKeyboardButton("❌ Отмена", callback_data=CB_P_CANCEL)])
     return InlineKeyboardMarkup(grid)
+
+
+CB_A_RUN = "an:run"  # an:run:<plant_id>
+CB_A_CANCEL = "an:cn"
+
+def build_analyze_keyboard(plant_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🧠 Проанализировать", callback_data=f"{CB_A_RUN}:{plant_id}")],
+        [InlineKeyboardButton("❌ Отмена", callback_data=CB_A_CANCEL)],
+    ])
+
 
 
 # =========================
@@ -545,6 +570,31 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await q.message.reply_text(UX.PHOTO_SEND, parse_mode=UX.PARSE_MODE)
         return
 
+    # analyze
+    if data == CB_A_CANCEL:
+        try:
+            await q.edit_message_text(UX.CANCEL_OK, parse_mode=UX.PARSE_MODE)
+        except Exception:
+            await q.message.reply_text(UX.CANCEL_OK, parse_mode=UX.PARSE_MODE)
+        return
+
+    if data.startswith(f"{CB_A_RUN}:"):
+        try:
+            pid = int(data.split(":")[-1])
+        except Exception:
+            return
+        try:
+            await q.edit_message_text(UX.ANALYZE_WORKING, parse_mode=UX.PARSE_MODE)
+        except Exception:
+            await q.message.reply_text(UX.ANALYZE_WORKING, parse_mode=UX.PARSE_MODE)
+
+        try:
+            analysis_text = await _analyze_latest_photo(update.effective_user.id, pid, context)
+        except Exception:
+            analysis_text = UX.ANALYZE_ERROR
+
+        await q.message.reply_text(analysis_text, parse_mode=UX.PARSE_MODE)
+        return
 
 # ---------- messages ----------
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -665,6 +715,92 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data.clear()
     await update.message.reply_text(UX.PHOTO_SAVED, parse_mode=UX.PARSE_MODE)
+    await update.message.reply_text(
+        UX.PHOTO_ANALYZE_OFFER,
+        parse_mode=UX.PARSE_MODE,
+        reply_markup=build_analyze_keyboard(int(plant_id)),
+    )
+
+
+async def _analyze_latest_photo(user_id: int, plant_id: int, context: ContextTypes.DEFAULT_TYPE) -> str:
+    if not _openai_client:
+        return UX.ANALYZE_NO_KEY
+
+    plant_ctx = get_plant_context(user_id, plant_id)
+    if not plant_ctx:
+        return "<b>Не нашла это растение 🤔</b>"
+
+    plant_name, norm_days, last_watered_at = plant_ctx
+
+    photo_row = get_last_photo_for_plant(user_id, plant_id)
+    if not photo_row:
+        return UX.ANALYZE_NO_PHOTO
+
+    _photo_id, tg_file_id, tg_unique_id, caption, created_at = photo_row
+
+    tg_file = await context.bot.get_file(tg_file_id)
+    data = await tg_file.download_as_bytearray()
+
+    b64 = base64.b64encode(bytes(data)).decode("ascii")
+    data_url = f"data:image/jpeg;base64,{b64}"
+
+    today = datetime.now(TZ).date()
+    days_since = None
+    if last_watered_at:
+        try:
+            days_since = (today - last_watered_at.astimezone(TZ).date()).days
+        except Exception:
+            try:
+                days_since = (today - last_watered_at.date()).days
+            except Exception:
+                days_since = None
+
+    ctx_lines = [
+        f"Plant name: {plant_name}",
+        f"Watering norm: {norm_days} days" if norm_days else "Watering norm: unknown",
+        f"Days since last watering: {days_since}" if days_since is not None else "Days since last watering: unknown",
+    ]
+    if caption:
+        ctx_lines.append(f"User caption: {caption}")
+
+    instructions = (
+        "You are a careful plant-care assistant. Analyze the photo and give practical care advice.\n"
+        "Rules:\n"
+        "- Separate clearly: (1) What you can directly see in the image (facts) vs (2) hypotheses.\n"
+        "- If confidence is low, ask for 1-2 specific extra photos instead of guessing.\n"
+        "- Avoid dangerous chemical advice. Prefer gentle, safe steps.\n"
+        "- Keep it concise.\n\n"
+        "Output in Russian with this exact structure:\n"
+        "1) Коротко (1-2 строки)\n"
+        "2) Что вижу на фото (3-6 буллетов)\n"
+        "3) Вероятные причины (2-4 пункта, с оценкой уверенности: высокая/средняя/низкая)\n"
+        "4) Что сделать сейчас (с приоритетами: сегодня / на неделе / не делать)\n"
+        "5) Если нужно уточнить — что доснять/спросить\n"
+    )
+
+    user_text = "Context:\n" + "\n".join(ctx_lines) + "\n\nPlease analyze the image."
+
+    def _call_openai():
+        return _openai_client.responses.create(
+            model=OPENAI_MODEL,
+            input=[{
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": instructions + "\n\n" + user_text},
+                    {"type": "input_image", "image_url": data_url},
+                ],
+            }],
+            max_output_tokens=650,
+        )
+
+    resp = await asyncio.to_thread(_call_openai)
+    out = getattr(resp, "output_text", "") or ""
+    out = out.strip()
+    if not out:
+        return UX.ANALYZE_ERROR
+
+    safe = _html.escape(out, quote=False)
+    return f"🧠 <b>Анализ фото: {UX._esc(plant_name)}</b>\n\n<i>{safe}</i>"
 
 
 def main():
