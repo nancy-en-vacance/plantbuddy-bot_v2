@@ -24,6 +24,8 @@ from storage import (
     log_water_many,
     compute_today,
     db_check,
+    list_plants_archived,
+    set_active,
 )
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
@@ -53,7 +55,7 @@ class UX:
     # --- generic blocks ---
     START = (
         "🌱 <b>PlantBuddy</b>\n\n"
-        "<b>Помню, когда поливать твои растения</b>\n\n"
+        "Я помогу не забывать про полив растений.\n\n"
         "/add_plant — добавить растение\n"
         "/plants — список растений\n"
         "/rename_plant — переименовать\n"
@@ -187,6 +189,37 @@ class UX:
     EMPTY_LIST = "Список пуст."
 
 
+
+
+    @staticmethod
+    def archive_prompt(rows) -> str:
+        return (
+            "<b>Хочешь убрать растение из активных? 🗂️</b>\n\n"
+            f"{UX.plants_list(rows)}\n\n"
+            "Напиши номера через запятую (например: 2)\n\n"
+            "Если передумала — /cancel"
+        )
+
+    ARCHIVE_EMPTY = "Список пуст."
+
+    @staticmethod
+    def archive_done(n: int) -> str:
+        if n == 1:
+            return "<b>Готово 🌱</b>\n\nРастение убрала в архив."
+        if 2 <= n <= 4:
+            return f"<b>Готово 🌱</b>\n\nУбрала в архив {n} растения."
+        return f"<b>Готово 🌱</b>\n\nУбрала в архив {n} растений."
+
+    @staticmethod
+    def archived_list(rows) -> str:
+        return (
+            "<b>Растения в архиве 🗂️</b>\n\n"
+            f"{UX.plants_list(rows)}"
+        )
+
+    NO_ARCHIVED = "<b>В архиве пока пусто 🗂️</b>"
+
+
 # =========================
 # Handlers
 # =========================
@@ -259,6 +292,32 @@ async def cmd_water(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     context.user_data["await_water"] = True
     await update.message.reply_text(UX.water_prompt(rows), parse_mode=UX.PARSE_MODE)
+
+
+
+async def cmd_archive(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    rows = list_plants(update.effective_user.id)
+    if not rows:
+        await update.message.reply_text(UX.ARCHIVE_EMPTY, parse_mode=UX.PARSE_MODE)
+        return
+
+    context.user_data.clear()
+    context.user_data["await_archive"] = True
+
+    await update.message.reply_text(
+        UX.archive_prompt(rows),
+        parse_mode=UX.PARSE_MODE,
+    )
+
+
+async def cmd_archived(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    rows = list_plants_archived(update.effective_user.id)
+    if not rows:
+        await update.message.reply_text(UX.NO_ARCHIVED, parse_mode=UX.PARSE_MODE)
+        return
+
+    await update.message.reply_text(UX.archived_list(rows), parse_mode=UX.PARSE_MODE)
+
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -355,6 +414,8 @@ def main():
     app.add_handler(CommandHandler("norms", cmd_norms))
     app.add_handler(CommandHandler("today", cmd_today))
     app.add_handler(CommandHandler("water", cmd_water))
+    app.add_handler(CommandHandler("archive", cmd_archive))
+    app.add_handler(CommandHandler("archived", cmd_archived))
     app.add_handler(CommandHandler("db", cmd_db))
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
