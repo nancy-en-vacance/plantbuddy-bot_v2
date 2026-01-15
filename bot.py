@@ -1,4 +1,4 @@
-# bot.py — v6 (micro polish for /water inline buttons)
+# bot.py — Photo v1 (flow A): /photo -> choose plant -> send photo -> save tg file_id
 import os
 import html as _html
 from datetime import datetime, date
@@ -31,6 +31,7 @@ from storage import (
     db_check,
     list_plants_archived,
     set_active,
+    add_plant_photo,
 )
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
@@ -69,6 +70,7 @@ class UX:
         "/archive — убрать в архив\n"
         "/archived — показать архив\n"
         "/restore — вернуть из архива\n"
+        "/photo — добавить фото растения 📸\n"
         "/cancel — отменить действие"
     )
 
@@ -213,19 +215,25 @@ class UX:
     RESTORE_BAD = "<b>Хм, я не поняла 🤔</b>\n\nПопробуй так:\n<i>1</i>"
     RESTORE_DONE = "<b>Готово 🌱</b>\n\nРастение снова активное."
 
+    # --- water inline polish ---
     @staticmethod
     def water_screen(selected_count: int, selected_preview: str = "") -> str:
-        # A compact header that updates on toggles
         if selected_count == 0:
             return "<b>Какие растения полила? 💧</b>\n\nВыбери из списка ниже 👇"
         preview = f" — <i>{UX._esc(selected_preview)}</i>" if selected_preview else ""
         return f"<b>Выбрано: {selected_count}</b>{preview}\n\nВыбери ещё или нажми «Готово» ✅"
 
+    # --- photo flow ---
+    PHOTO_CHOOSE = "<b>К какому растению это фото? 📸</b>\n\nВыбери из списка ниже 👇"
+    PHOTO_SEND = "<b>Ок 👌</b>\n\nТеперь пришли фото этого растения 📸\n\nЕсли передумала — /cancel"
+    PHOTO_SAVED = "<b>Приняла 📸</b>\n\nФото сохранила. Анализ добавим чуть позже 🌿"
+    PHOTO_EXPECTED = "<b>Жду фото 📸</b>\n\nПришли фото растения.\n\nЕсли передумала — /cancel"
+
 
 # =========================
-# Inline keyboard: /water selection
+# Inline keyboard: /water selection (same as v6)
 # =========================
-CB_W_TOGGLE = "w:tg"   # w:tg:<plant_id>
+CB_W_TOGGLE = "w:tg"
 CB_W_DONE = "w:dn"
 CB_W_CANCEL = "w:cn"
 
@@ -261,15 +269,8 @@ def _selected_preview(rows: List[Tuple[int, str]], selected: Set[int], max_items
     return ", ".join(names)
 
 def build_water_keyboard(rows: List[Tuple[int, str]], selected: Set[int]) -> InlineKeyboardMarkup:
-    """
-    Micro polish:
-    - 2 columns where possible
-    - selected items get a checkmark prefix
-    - bottom row: Done / Cancel
-    """
     grid: List[List[InlineKeyboardButton]] = []
     row_buf: List[InlineKeyboardButton] = []
-
     for pid, name in rows:
         label = f"{'✅ ' if pid in selected else ''}{name}"
         btn = InlineKeyboardButton(label, callback_data=f"{CB_W_TOGGLE}:{pid}")
@@ -279,11 +280,31 @@ def build_water_keyboard(rows: List[Tuple[int, str]], selected: Set[int]) -> Inl
             row_buf = []
     if row_buf:
         grid.append(row_buf)
-
     grid.append([
         InlineKeyboardButton("✅ Готово", callback_data=CB_W_DONE),
         InlineKeyboardButton("❌ Отмена", callback_data=CB_W_CANCEL),
     ])
+    return InlineKeyboardMarkup(grid)
+
+
+# =========================
+# Inline keyboard: /photo plant choice
+# =========================
+CB_P_TOGGLE = "p:ch"  # p:ch:<plant_id>
+CB_P_CANCEL = "p:cn"
+
+def build_photo_keyboard(rows: List[Tuple[int, str]]) -> InlineKeyboardMarkup:
+    grid: List[List[InlineKeyboardButton]] = []
+    row_buf: List[InlineKeyboardButton] = []
+    for pid, name in rows:
+        btn = InlineKeyboardButton(name, callback_data=f"{CB_P_TOGGLE}:{pid}")
+        row_buf.append(btn)
+        if len(row_buf) == 2:
+            grid.append(row_buf)
+            row_buf = []
+    if row_buf:
+        grid.append(row_buf)
+    grid.append([InlineKeyboardButton("❌ Отмена", callback_data=CB_P_CANCEL)])
     return InlineKeyboardMarkup(grid)
 
 
@@ -349,12 +370,10 @@ async def cmd_water(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not rows:
         await update.message.reply_text(UX.EMPTY_LIST)
         return
-
     context.user_data.clear()
     context.user_data["await_water_buttons"] = True
     _cache_water_rows(context, rows)
     _set_water_selected(context, set())
-
     await update.message.reply_text(
         UX.water_screen(0),
         parse_mode=UX.PARSE_MODE,
@@ -390,6 +409,20 @@ async def cmd_restore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["await_restore"] = True
     await update.message.reply_text(UX.restore_prompt(rows), parse_mode=UX.PARSE_MODE)
 
+# ---------- photo ----------
+async def cmd_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    rows = list_plants(update.effective_user.id)
+    if not rows:
+        await update.message.reply_text(UX.EMPTY_LIST)
+        return
+    context.user_data.clear()
+    context.user_data["await_photo_pick"] = True
+    await update.message.reply_text(
+        UX.PHOTO_CHOOSE,
+        parse_mode=UX.PARSE_MODE,
+        reply_markup=build_photo_keyboard(rows),
+    )
+
 def _parse_indices_csv(text: str, n_rows: int):
     parts = (text or "").replace(" ", "").split(",")
     idxs = []
@@ -423,7 +456,6 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["await_water_buttons"] = True
         _cache_water_rows(context, rows)
         _set_water_selected(context, set())
-        # Edit the message into the water screen
         try:
             await q.edit_message_text(
                 UX.water_screen(0),
@@ -431,7 +463,6 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=build_water_keyboard(rows, set()),
             )
         except Exception:
-            # fallback: send a new message
             await q.message.reply_text(
                 UX.water_screen(0),
                 parse_mode=UX.PARSE_MODE,
@@ -446,18 +477,14 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pid = int(data.split(":")[-1])
         except Exception:
             return
-
         selected = _get_water_selected(context)
         if pid in selected:
             selected.remove(pid)
         else:
             selected.add(pid)
         _set_water_selected(context, selected)
-
         rows = _get_cached_water_rows(context) or list_plants(update.effective_user.id)
         _cache_water_rows(context, rows)
-
-        # Update keyboard and header text (micro polish)
         preview = _selected_preview(rows, selected)
         try:
             await q.edit_message_text(
@@ -481,12 +508,9 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not context.user_data.get("await_water_buttons"):
             return
         selected = _get_water_selected(context)
-        rows = _get_cached_water_rows(context) or list_plants(update.effective_user.id)
-
         if not selected:
             await q.message.reply_text("<b>Выбери хотя бы одно растение 🤔</b>", parse_mode=UX.PARSE_MODE)
             return
-
         log_water_many(update.effective_user.id, list(selected), datetime.now(TZ))
         context.user_data.clear()
         try:
@@ -495,7 +519,34 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await q.message.reply_text(UX.WATER_DONE, parse_mode=UX.PARSE_MODE)
         return
 
+    # photo plant choice
+    if data == CB_P_CANCEL:
+        context.user_data.clear()
+        try:
+            await q.edit_message_text(UX.CANCEL_OK, parse_mode=UX.PARSE_MODE)
+        except Exception:
+            await q.message.reply_text(UX.CANCEL_OK, parse_mode=UX.PARSE_MODE)
+        return
 
+    if data.startswith(f"{CB_P_TOGGLE}:"):
+        if not context.user_data.get("await_photo_pick"):
+            return
+        try:
+            pid = int(data.split(":")[-1])
+        except Exception:
+            return
+        # store chosen plant_id and wait for photo
+        context.user_data.clear()
+        context.user_data["await_photo_upload"] = True
+        context.user_data["photo_plant_id"] = pid
+        try:
+            await q.edit_message_text(UX.PHOTO_SEND, parse_mode=UX.PARSE_MODE)
+        except Exception:
+            await q.message.reply_text(UX.PHOTO_SEND, parse_mode=UX.PARSE_MODE)
+        return
+
+
+# ---------- messages ----------
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (update.message.text or "").strip()
 
@@ -540,7 +591,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(UX.NORM_DONE, parse_mode=UX.PARSE_MODE)
         return
 
-    # text fallback for /water when button screen is open
+    # water text fallback
     if context.user_data.get("await_water_buttons"):
         rows = list_plants(update.effective_user.id)
         idxs = _parse_indices_csv(text, len(rows))
@@ -581,6 +632,40 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(UX.RESTORE_DONE, parse_mode=UX.PARSE_MODE)
         return
 
+    # photo: if user sends text while waiting photo
+    if context.user_data.get("await_photo_upload"):
+        await update.message.reply_text(UX.PHOTO_EXPECTED, parse_mode=UX.PARSE_MODE)
+        return
+
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("await_photo_upload"):
+        # ignore photos outside flow (or we can guide)
+        return
+
+    plant_id = context.user_data.get("photo_plant_id")
+    if not plant_id:
+        context.user_data.clear()
+        await update.message.reply_text(UX.CANCEL_OK, parse_mode=UX.PARSE_MODE)
+        return
+
+    # choose best size (last is usually the largest)
+    photo = update.message.photo[-1]
+    file_id = photo.file_id
+    unique_id = getattr(photo, "file_unique_id", None)
+    caption = update.message.caption if update.message.caption else None
+
+    add_plant_photo(
+        user_id=update.effective_user.id,
+        plant_id=int(plant_id),
+        tg_file_id=file_id,
+        tg_file_unique_id=unique_id,
+        caption=caption,
+    )
+
+    context.user_data.clear()
+    await update.message.reply_text(UX.PHOTO_SAVED, parse_mode=UX.PARSE_MODE)
+
 
 def main():
     init_db()
@@ -598,9 +683,11 @@ def main():
     app.add_handler(CommandHandler("archive", cmd_archive))
     app.add_handler(CommandHandler("archived", cmd_archived))
     app.add_handler(CommandHandler("restore", cmd_restore))
+    app.add_handler(CommandHandler("photo", cmd_photo))
     app.add_handler(CommandHandler("db", cmd_db))
 
     app.add_handler(CallbackQueryHandler(on_callback))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     app.run_webhook(
