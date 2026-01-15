@@ -11,6 +11,10 @@ def get_conn():
 
 
 def init_db():
+    """
+    Создаёт таблицы, если их нет.
+    Никаких миграций/ALTER TABLE в рантайме — только CREATE IF NOT EXISTS.
+    """
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("""
         CREATE TABLE IF NOT EXISTS plants (
@@ -36,6 +40,9 @@ def init_db():
 
 # ---------- plants ----------
 def add_plant(user_id: int, name: str):
+    name = (name or "").strip()
+    if not name:
+        return
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("""
         INSERT INTO plants (user_id, name)
@@ -46,6 +53,7 @@ def add_plant(user_id: int, name: str):
 
 
 def list_plants(user_id: int) -> List[Tuple[int, str]]:
+    """Только активные растения."""
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("""
         SELECT id, name FROM plants
@@ -55,9 +63,8 @@ def list_plants(user_id: int) -> List[Tuple[int, str]]:
         return cur.fetchall()
 
 
-
-
 def list_plants_archived(user_id: int) -> List[Tuple[int, str]]:
+    """Только архивные (active=FALSE)."""
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("""
         SELECT id, name FROM plants
@@ -68,6 +75,7 @@ def list_plants_archived(user_id: int) -> List[Tuple[int, str]]:
 
 
 def set_active(user_id: int, plant_id: int, active: bool) -> bool:
+    """Переключает active. Возвращает True если обновилось 1 растение."""
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("""
         UPDATE plants
@@ -76,6 +84,28 @@ def set_active(user_id: int, plant_id: int, active: bool) -> bool:
         """, (active, plant_id, user_id))
         conn.commit()
         return cur.rowcount == 1
+
+
+def rename_plant(user_id: int, plant_id: int, new_name: str) -> bool:
+    """
+    Переименовать растение (только active=TRUE).
+    Возвращает True если обновилось, иначе False.
+    """
+    new_name = (new_name or "").strip()
+    if not new_name:
+        return False
+
+    try:
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+            UPDATE plants
+            SET name=%s
+            WHERE id=%s AND user_id=%s AND active=TRUE
+            """, (new_name, plant_id, user_id))
+            conn.commit()
+            return cur.rowcount == 1
+    except psycopg.errors.UniqueViolation:
+        return False
 
 
 def set_norm(user_id: int, plant_id: int, days: int) -> bool:
@@ -94,7 +124,7 @@ def get_norms(user_id: int) -> List[Tuple[str, int]]:
         cur.execute("""
         SELECT name, water_every_days
         FROM plants
-        WHERE user_id=%s AND water_every_days IS NOT NULL
+        WHERE user_id=%s AND active=TRUE AND water_every_days IS NOT NULL
         ORDER BY name
         """, (user_id,))
         return cur.fetchall()
@@ -106,7 +136,7 @@ def log_water(user_id: int, plant_id: int, when: datetime) -> bool:
         cur.execute("""
         UPDATE plants
         SET last_watered_at=%s
-        WHERE id=%s AND user_id=%s
+        WHERE id=%s AND user_id=%s AND active=TRUE
         """, (when, plant_id, user_id))
         conn.commit()
         return cur.rowcount == 1
@@ -115,7 +145,7 @@ def log_water(user_id: int, plant_id: int, when: datetime) -> bool:
 def log_water_many(user_id: int, plant_ids: List[int], when: datetime) -> int:
     """
     Обновляет last_watered_at для списка растений.
-    Возвращает сколько реально обновилось (принадлежит user_id).
+    Возвращает сколько реально обновилось (принадлежит user_id и active=TRUE).
     """
     if not plant_ids:
         return 0
@@ -199,7 +229,8 @@ def set_last_sent(user_id: int, d: date):
         conn.commit()
 
 
-def db_check(user_id: int):
+# ---------- diagnostics ----------
+def db_check(user_id: int) -> int:
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM plants WHERE user_id=%s", (user_id,))
         return cur.fetchone()[0]
