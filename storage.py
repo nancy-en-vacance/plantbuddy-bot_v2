@@ -35,6 +35,19 @@ def init_db():
         );
         """)
 
+        # New: plant_photos (lightweight, stores only Telegram file ids + metadata)
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS plant_photos (
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL,
+            plant_id INT NOT NULL REFERENCES plants(id) ON DELETE CASCADE,
+            tg_file_id TEXT NOT NULL,
+            tg_file_unique_id TEXT,
+            caption TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        """)
+
         conn.commit()
 
 
@@ -87,10 +100,6 @@ def set_active(user_id: int, plant_id: int, active: bool) -> bool:
 
 
 def rename_plant(user_id: int, plant_id: int, new_name: str) -> bool:
-    """
-    Переименовать растение (только active=TRUE).
-    Возвращает True если обновилось, иначе False.
-    """
     new_name = (new_name or "").strip()
     if not new_name:
         return False
@@ -143,10 +152,6 @@ def log_water(user_id: int, plant_id: int, when: datetime) -> bool:
 
 
 def log_water_many(user_id: int, plant_ids: List[int], when: datetime) -> int:
-    """
-    Обновляет last_watered_at для списка растений.
-    Возвращает сколько реально обновилось (принадлежит user_id и active=TRUE).
-    """
     if not plant_ids:
         return 0
 
@@ -227,6 +232,47 @@ def set_last_sent(user_id: int, d: date):
         DO UPDATE SET last_sent_local_date=%s
         """, (user_id, d, d))
         conn.commit()
+
+
+# ---------- photos ----------
+def add_plant_photo(
+    user_id: int,
+    plant_id: int,
+    tg_file_id: str,
+    tg_file_unique_id: Optional[str] = None,
+    caption: Optional[str] = None,
+) -> int:
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO plant_photos (user_id, plant_id, tg_file_id, tg_file_unique_id, caption)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (user_id, plant_id, tg_file_id, tg_file_unique_id, caption),
+        )
+        row_id = cur.fetchone()[0]
+        conn.commit()
+        return row_id
+
+
+def list_plant_photos(
+    user_id: int,
+    plant_id: int,
+    limit: int = 10,
+) -> List[Tuple[int, str, Optional[str], datetime]]:
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, tg_file_id, caption, created_at
+            FROM plant_photos
+            WHERE user_id=%s AND plant_id=%s
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
+            (user_id, plant_id, limit),
+        )
+        return cur.fetchall()
 
 
 # ---------- diagnostics ----------
