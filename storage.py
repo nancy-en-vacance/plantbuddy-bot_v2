@@ -275,6 +275,41 @@ def list_plant_photos(
         return cur.fetchall()
 
 
+
+def get_plant_context(user_id: int, plant_id: int):
+    """
+    Returns (name, water_every_days, last_watered_at) for active plant.
+    """
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT name, water_every_days, last_watered_at
+            FROM plants
+            WHERE user_id=%s AND id=%s AND active=TRUE
+            """,
+            (user_id, plant_id),
+        )
+        return cur.fetchone()
+
+
+def get_last_photo_for_plant(user_id: int, plant_id: int):
+    """
+    Returns latest photo row: (id, tg_file_id, tg_file_unique_id, caption, created_at) or None.
+    """
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, tg_file_id, tg_file_unique_id, caption, created_at
+            FROM plant_photos
+            WHERE user_id=%s AND plant_id=%s
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (user_id, plant_id),
+        )
+        return cur.fetchone()
+
+
 # ---------- diagnostics ----------
 def db_check(user_id: int) -> int:
     with get_conn() as conn, conn.cursor() as cur:
