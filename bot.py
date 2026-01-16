@@ -15,7 +15,6 @@ from telegram import (
     InlineKeyboardMarkup,
     ReplyKeyboardMarkup,
     KeyboardButton,
-    WebAppInfo,
 )
 from telegram.ext import (
     Application,
@@ -25,6 +24,15 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
+
+import json
+import hashlib
+import hmac
+from urllib.parse import parse_qsl
+import time
+
+from fastapi import FastAPI, Request, Header, HTTPException
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from storage import (
     init_db,
@@ -258,12 +266,9 @@ MENU_PHOTO = "💬Спросить про растение"
 MENU_PLANTS = "🪴Посмотреть все растения"
 MENU_NORMS = "💦Узнать частоту полива"
 
-MENU_APP = "🧾Открыть PlantBuddy"
-
 def build_main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            [KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app"))],
             [KeyboardButton(MENU_TODAY), KeyboardButton(MENU_WATER)],
             [KeyboardButton(MENU_PHOTO), KeyboardButton(MENU_PLANTS)],
             [KeyboardButton(MENU_NORMS)],
@@ -854,36 +859,391 @@ async def _analyze_latest_photo(user_id: int, plant_id: int, context: ContextTyp
     return f"🧠 <b>Анализ фото: {UX._esc(plant_name)}</b>\n\n<i>{safe}</i>"
 
 
-def main():
+# =========================
+# FastAPI (ASGI) server: Mini App + Telegram webhook
+# =========================
+
+ASGI_TTL_SECONDS = int(os.environ.get("TMA_TTL_SECONDS", "300"))  # 5 minutes default
+
+def _validate_and_get_user_id(init_data: str) -> int:
+    """Validates Telegram Mini App initData and returns Telegram user_id.
+
+    Follows Telegram WebApp data validation algorithm.
+    """
+    if not init_data:
+        raise HTTPException(status_code=401, detail="Missing initData")
+
+    # Parse querystring-like initData
+    pairs = dict(parse_qsl(init_data, keep_blank_values=True))
+    received_hash = pairs.pop("hash", None)
+    if not received_hash:
+        raise HTTPException(status_code=401, detail="Missing hash")
+
+    # Build data_check_string
+    data_check_items = []
+    for k in sorted(pairs.keys()):
+        data_check_items.append(f"{k}={pairs[k]}")
+    data_check_string = "\n".join(data_check_items)
+
+    # secret_key = HMAC_SHA256(key="WebAppData", msg=BOT_TOKEN)
+    secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode("utf-8"), hashlib.sha256).digest()
+    calculated_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    if not hmac.compare_digest(calculated_hash, received_hash):
+        raise HTTPException(status_code=401, detail="Bad initData hash")
+
+    # Anti-replay: auth_date freshness
+    auth_date_raw = pairs.get("auth_date")
+    if auth_date_raw and auth_date_raw.isdigit():
+        auth_date = int(auth_date_raw)
+        if int(time.time()) - auth_date > ASGI_TTL_SECONDS:
+            raise HTTPException(status_code=401, detail="initData expired")
+
+    user_raw = pairs.get("user")
+    if not user_raw:
+        raise HTTPException(status_code=401, detail="Missing user")
+
+    try:
+        user_obj = json.loads(user_raw)
+        user_id = int(user_obj.get("id"))
+    except Exception:
+        raise HTTPException(status_code=401, detail="Bad user payload")
+
+    return user_id
+
+
+def _build_today_payload(user_id: int):
+    today = datetime.now(TZ).date()
+    rows = list_plants(user_id)  # [(id, name)]
+    items = []
+    due_count = 0
+    overdue_count = 0
+    setup_count = 0
+
+    for pid, name in rows:
+        ctx = get_plant_context(user_id, pid)  # (name, norm_days, last_watered_at)
+        if not ctx:
+            continue
+        _pname, norm_days, last_watered_at = ctx
+
+        status = "ok"
+        days_since = None
+        overdue_days = None
+        due_in_days = None
+
+        if not norm_days or not last_watered_at:
+            status = "setup"
+            setup_count += 1
+        else:
+            try:
+                last_local = last_watered_at.astimezone(TZ)
+            except Exception:
+                last_local = last_watered_at
+            last_date = last_local.date()
+            days_since = (today - last_date).days
+            due_date = last_date + timedelta(days=int(norm_days))
+            if due_date < today:
+                status = "overdue"
+                overdue_days = (today - due_date).days
+                overdue_count += 1
+            elif due_date == today:
+                status = "due"
+                due_count += 1
+            else:
+                status = "ok"
+                due_in_days = (due_date - today).days
+
+        items.append({
+            "id": int(pid),
+            "name": str(name),
+            "status": status,  # ok / due / overdue / setup
+            "norm_days": int(norm_days) if norm_days else None,
+            "days_since": int(days_since) if days_since is not None else None,
+            "overdue_days": int(overdue_days) if overdue_days is not None else None,
+            "due_in_days": int(due_in_days) if due_in_days is not None else None,
+        })
+
+    # Sort like a tracker: overdue, due, setup, ok
+    order = {"overdue": 0, "due": 1, "setup": 2, "ok": 3}
+    items.sort(key=lambda x: (order.get(x["status"], 9), x["name"].lower()))
+
+    return {
+        "date": today.isoformat(),
+        "summary": {
+            "overdue": overdue_count,
+            "due": due_count,
+            "setup": setup_count,
+            "total": len(items),
+        },
+        "items": items,
+    }
+
+
+def _mini_app_html() -> str:
+    # Minimal tracker UI, no build step. Uses Telegram WebApp JS.
+    return """<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PlantBuddy</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    body{margin:0;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Inter,Arial,sans-serif;background:#0b0f14;color:#e8eef5}
+    .wrap{max-width:720px;margin:0 auto;padding:16px}
+    h1{font-size:22px;margin:0 0 6px 0}
+    .sub{opacity:.75;margin:0 0 14px 0;font-size:14px}
+    .pill{display:inline-block;padding:6px 10px;border-radius:999px;background:#111a24;margin-right:8px;font-size:13px}
+    .card{background:#0f1621;border:1px solid #1b2838;border-radius:14px;padding:12px 12px;margin:10px 0;display:flex;gap:10px;align-items:flex-start}
+    .cb{margin-top:2px;transform:scale(1.2)}
+    .title{font-size:16px;margin:0 0 4px 0}
+    .meta{font-size:13px;opacity:.75;margin:0}
+    .tag{font-size:12px;padding:3px 8px;border-radius:999px;border:1px solid #24354b;opacity:.9}
+    .row{display:flex;justify-content:space-between;gap:10px;align-items:center}
+    .btn{width:100%;margin-top:14px;padding:14px 14px;border-radius:12px;border:0;background:#1f6feb;color:white;font-size:16px;font-weight:600}
+    .btn:disabled{opacity:.5}
+    .err{margin-top:10px;color:#ff6b6b;font-size:13px;white-space:pre-wrap}
+    .info{margin:14px 0 0 0;font-size:13px;opacity:.8}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="row">
+    <div>
+      <h1>📅Сегодня</h1>
+      <p class="sub" id="sub">Загружаю…</p>
+    </div>
+  </div>
+
+  <div id="pills"></div>
+  <div id="list"></div>
+
+  <button id="waterBtn" class="btn" disabled>✅Отметить полив</button>
+
+  <p class="info">ℹ️Анализ фото отправляет изображение в OpenAI(только если ты нажмёшь анализ в боте).</p>
+  <div id="err" class="err"></div>
+</div>
+
+<script>
+  const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+  if (tg) { tg.ready(); tg.expand(); }
+
+  const initData = tg ? (tg.initData || "") : "";
+  const elSub = document.getElementById("sub");
+  const elPills = document.getElementById("pills");
+  const elList = document.getElementById("list");
+  const elErr = document.getElementById("err");
+  const waterBtn = document.getElementById("waterBtn");
+
+  const selected = new Set();
+
+  function pill(text){
+    const s=document.createElement("span");
+    s.className="pill";
+    s.textContent=text;
+    return s;
+  }
+
+  function statusTag(status, item){
+    let t = "";
+    if (status==="overdue") t = "Просрочено";
+    else if (status==="due") t = "Пора";
+    else if (status==="setup") t = "Нужно настроить";
+    else t = "Ок";
+    const span=document.createElement("span");
+    span.className="tag";
+    span.textContent=t;
+    return span;
+  }
+
+  function metaText(item){
+    const parts=[];
+    if (item.norm_days) parts.push(`норма ${item.norm_days} дн`);
+    if (item.days_since!==null && item.days_since!==undefined) parts.push(`последний полив ${item.days_since} дн назад`);
+    if (item.status==="overdue" && item.overdue_days!==null) parts.push(`просрочено на ${item.overdue_days} дн`);
+    if (item.status==="ok" && item.due_in_days!==null) parts.push(`следующий полив через ${item.due_in_days} дн`);
+    return parts.join(" · ");
+  }
+
+  function render(data){
+    elSub.textContent = `Всего: ${data.summary.total} · Пора: ${data.summary.due} · Просрочено: ${data.summary.overdue} · Настроить: ${data.summary.setup}`;
+    elPills.innerHTML="";
+    elPills.appendChild(pill(`Пора: ${data.summary.due}`));
+    elPills.appendChild(pill(`Просрочено: ${data.summary.overdue}`));
+    elPills.appendChild(pill(`Настроить: ${data.summary.setup}`));
+
+    elList.innerHTML="";
+    data.items.forEach(item=>{
+      const card=document.createElement("div");
+      card.className="card";
+
+      const cb=document.createElement("input");
+      cb.type="checkbox";
+      cb.className="cb";
+      cb.checked = selected.has(item.id);
+      cb.addEventListener("change", ()=>{
+        if (cb.checked) selected.add(item.id); else selected.delete(item.id);
+        waterBtn.disabled = selected.size===0;
+      });
+
+      const box=document.createElement("div");
+      box.style.flex="1";
+
+      const row=document.createElement("div");
+      row.className="row";
+
+      const t=document.createElement("div");
+      const h=document.createElement("p");
+      h.className="title";
+      h.textContent=item.name;
+      t.appendChild(h);
+
+      const tag=statusTag(item.status,item);
+      row.appendChild(t);
+      row.appendChild(tag);
+
+      const meta=document.createElement("p");
+      meta.className="meta";
+      meta.textContent=metaText(item);
+
+      box.appendChild(row);
+      box.appendChild(meta);
+
+      card.appendChild(cb);
+      card.appendChild(box);
+
+      elList.appendChild(card);
+    });
+    waterBtn.disabled = selected.size===0;
+  }
+
+  async function load(){
+    elErr.textContent="";
+    try{
+      const r = await fetch("/api/today", { headers: { "X-Telegram-InitData": initData } });
+      const j = await r.json();
+      if (!r.ok) throw new Error(JSON.stringify(j));
+      render(j);
+    }catch(e){
+      elSub.textContent="Не получилось загрузить данные";
+      elErr.textContent = "Ошибка загрузки:" + String(e.message||e);
+    }
+  }
+
+  waterBtn.addEventListener("click", async ()=>{
+    elErr.textContent="";
+    waterBtn.disabled = true;
+    try{
+      const r = await fetch("/api/water", {
+        method:"POST",
+        headers: { "Content-Type":"application/json", "X-Telegram-InitData": initData },
+        body: JSON.stringify({ plant_ids: Array.from(selected) })
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(JSON.stringify(j));
+      selected.clear();
+      await load();
+    }catch(e){
+      elErr.textContent = "Ошибка:" + String(e.message||e);
+      waterBtn.disabled = selected.size===0;
+    }
+  });
+
+  load();
+</script>
+</body>
+</html>"""
+
+
+# Exported ASGI app for uvicorn: "uvicorn bot:app --host 0.0.0.0 --port $PORT"
+app = FastAPI()
+
+# Telegram Application (python-telegram-bot)
+telegram_app: Optional[Application] = None
+
+
+@app.on_event("startup")
+async def _startup():
+    global telegram_app
     init_db()
-    app = Application.builder().token(BOT_TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("cancel", cmd_cancel))
-    app.add_handler(CommandHandler("add_plant", cmd_add_plant))
-    app.add_handler(CommandHandler("plants", cmd_plants))
-    app.add_handler(CommandHandler("rename_plant", cmd_rename))
-    app.add_handler(CommandHandler("set_norms", cmd_set_norms))
-    app.add_handler(CommandHandler("norms", cmd_norms))
-    app.add_handler(CommandHandler("today", cmd_today))
-    app.add_handler(CommandHandler("water", cmd_water))
-    app.add_handler(CommandHandler("archive", cmd_archive))
-    app.add_handler(CommandHandler("archived", cmd_archived))
-    app.add_handler(CommandHandler("restore", cmd_restore))
-    app.add_handler(CommandHandler("photo", cmd_photo))
-    app.add_handler(CommandHandler("db", cmd_db))
+    telegram_app = Application.builder().token(BOT_TOKEN).build()
 
-    app.add_handler(CallbackQueryHandler(on_callback))
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    telegram_app.add_handler(CommandHandler("start", start))
+    telegram_app.add_handler(CommandHandler("cancel", cmd_cancel))
+    telegram_app.add_handler(CommandHandler("add_plant", cmd_add_plant))
+    telegram_app.add_handler(CommandHandler("plants", cmd_plants))
+    telegram_app.add_handler(CommandHandler("rename_plant", cmd_rename))
+    telegram_app.add_handler(CommandHandler("set_norms", cmd_set_norms))
+    telegram_app.add_handler(CommandHandler("norms", cmd_norms))
+    telegram_app.add_handler(CommandHandler("today", cmd_today))
+    telegram_app.add_handler(CommandHandler("water", cmd_water))
+    telegram_app.add_handler(CommandHandler("archive", cmd_archive))
+    telegram_app.add_handler(CommandHandler("archived", cmd_archived))
+    telegram_app.add_handler(CommandHandler("restore", cmd_restore))
+    telegram_app.add_handler(CommandHandler("photo", cmd_photo))
+    telegram_app.add_handler(CommandHandler("db", cmd_db))
 
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        url_path="webhook",
-        webhook_url=f"{BASE_URL}/webhook",
-    )
+    telegram_app.add_handler(CallbackQueryHandler(on_callback))
+    telegram_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+
+    await telegram_app.initialize()
+    await telegram_app.start()
+
+    # Ensure webhook points to our FastAPI route
+    await telegram_app.bot.set_webhook(url=f"{BASE_URL}/webhook")
 
 
+@app.on_event("shutdown")
+async def _shutdown():
+    global telegram_app
+    if telegram_app:
+        try:
+            await telegram_app.stop()
+        finally:
+            await telegram_app.shutdown()
+        telegram_app = None
+
+
+@app.get("/app", response_class=HTMLResponse)
+async def mini_app():
+    return HTMLResponse(_mini_app_html())
+
+
+@app.get("/api/today")
+async def api_today(x_telegram_initdata: Optional[str] = Header(default=None, alias="X-Telegram-InitData")):
+    user_id = _validate_and_get_user_id(x_telegram_initdata or "")
+    return JSONResponse(_build_today_payload(user_id))
+
+
+@app.post("/api/water")
+async def api_water(request: Request, x_telegram_initdata: Optional[str] = Header(default=None, alias="X-Telegram-InitData")):
+    user_id = _validate_and_get_user_id(x_telegram_initdata or "")
+    data = await request.json()
+    plant_ids = data.get("plant_ids") or []
+    try:
+        plant_ids = [int(x) for x in plant_ids]
+    except Exception:
+        raise HTTPException(status_code=400, detail="Bad plant_ids")
+
+    log_water_many(user_id, plant_ids, datetime.now(TZ))
+    return JSONResponse({"ok": True, "updated": len(plant_ids)})
+
+
+@app.post("/webhook")
+async def telegram_webhook(request: Request):
+    global telegram_app
+    if not telegram_app:
+        raise HTTPException(status_code=503, detail="Bot not ready")
+
+    data = await request.json()
+    update = Update.de_json(data, telegram_app.bot)
+    await telegram_app.process_update(update)
+    return JSONResponse({"ok": True})
+
+
+# Optional local run: python bot.py
 if __name__ == "__main__":
-    main()
+    import uvicorn
+    uvicorn.run("bot:app", host="0.0.0.0", port=PORT, reload=False)
