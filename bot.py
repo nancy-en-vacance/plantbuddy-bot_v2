@@ -815,8 +815,6 @@ async def _analyze_latest_photo(user_id: int, plant_id: int, context: ContextTyp
         "If confidence is low, clearly state this and prioritize observation over intervention.\n"
     )
 
-    )
-
     user_text = "Context:\n" + "\n".join(ctx_lines) + "\n\nPlease analyze the image."
 
     def _call_openai():
