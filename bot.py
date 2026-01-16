@@ -1,26 +1,13 @@
-# bot.py — PlantBuddy (Telegram bot + Telegram Mini App)
-# Web routes:
-# - POST /webhook  (Telegram updates)
-# - GET  /app      (Mini App UI)
-# - GET  /api/today (Mini App API, requires Telegram initData)
-# - POST /api/water (Mini App API, requires Telegram initData)
-
+# bot.py — Photo v1 (flow A): /photo -> choose plant -> send photo -> save tg file_id
 import os
 import html as _html
-import json
-import hmac
-import hashlib
-from datetime import datetime, date, timezone
+from datetime import datetime, date
 from zoneinfo import ZoneInfo
-from typing import Set, Optional, Tuple, List, Dict, Any
+from typing import Set, Optional, Tuple, List
 
 import asyncio
 import base64
-
 from openai import OpenAI
-
-from fastapi import FastAPI, Request, Header, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
 from telegram import (
     Update,
@@ -43,7 +30,6 @@ from storage import (
     init_db,
     add_plant,
     list_plants,
-    list_plants_full,
     rename_plant,
     set_norm,
     get_norms,
@@ -61,7 +47,6 @@ BOT_TOKEN = os.environ["BOT_TOKEN"]
 BASE_URL = os.environ["BASE_URL"].rstrip("/")
 PORT = int(os.environ.get("PORT", "10000"))
 TZ = ZoneInfo("Asia/Kolkata")
-
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4.1-mini")
 _openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
@@ -87,8 +72,21 @@ class UX:
     START = (
         "🌱<b>PlantBuddy</b>\n"
         "<b>Помню, когда поливать твои растения!</b>\n\n"
-        "Открой приложение внутри Telegram👇\n"
+        "Можно писать команды или нажимать кнопки снизу👇\n\n"
+        "/add_plant — добавить растение\n"
+        "/plants — список активных\n"
+        "/rename_plant — переименовать\n"
+        "/set_norms — задать норму полива\n"
+        "/norms — показать нормы\n"
+        "/today — что поливать сегодня\n"
+        "/water — отметить полив\n"
+        "/archive — убрать в архив\n"
+        "/archived — показать архив\n"
+        "/restore — вернуть из архива\n"
+        "/photo — спросить про растение\n"
+        "/cancel — отменить действие"
     )
+
 
     CANCEL_OK = "<b>Ок, остановились🌿</b>\n\nЕсли что — я тут."
     EMPTY_LIST = "Пока тут пусто🌱\n\nДобавь растение через /add_plant"
@@ -243,10 +241,7 @@ class UX:
     PHOTO_CHOOSE = "<b>К какому растению это фото? 📸</b>\n\nВыбери из списка ниже👇"
     PHOTO_SEND = "<b>Ок👌</b>\n\nТеперь пришли фото этого растения 📸\n\nЕсли передумала — /cancel"
     PHOTO_SAVED = "<b>Приняла 📸</b>\n\nФото сохранила."
-    PHOTO_ANALYZE_OFFER = (
-        "Хочешь — могу аккуратно прикинуть, что с растением?🧐\n"
-        "ℹ️При анализе фото отправляется в OpenAI."
-    )
+    PHOTO_ANALYZE_OFFER = "Хочешь — могу аккуратно прикинуть, что с растением?🧐"
     ANALYZE_WORKING = "<b>Смотрю фото👀</b>\n\nМинутку, я рядом."
     ANALYZE_NO_PHOTO = "<b>У меня нет фото для анализа 🤔</b>\n\nСначала пришли фото через /photo."
     ANALYZE_NO_KEY = "<b>Нужен ключ OpenAI 🤔</b>\n\nДобавь переменную окружения <i>OPENAI_API_KEY</i> на Render."
@@ -257,13 +252,13 @@ class UX:
 # =========================
 # Main menu (ReplyKeyboard)
 # =========================
-MENU_APP = "🧾Открыть PlantBuddy"
 MENU_TODAY = "📅План на сегодня"
 MENU_WATER = "💧Отметить полив"
 MENU_PHOTO = "💬Спросить про растение"
 MENU_PLANTS = "🪴Посмотреть все растения"
 MENU_NORMS = "💦Узнать частоту полива"
 
+MENU_APP = "🧾Открыть PlantBuddy"
 
 def build_main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
@@ -280,36 +275,29 @@ def build_main_menu() -> ReplyKeyboardMarkup:
 
 
 # =========================
-# Inline keyboard: /water selection
+# Inline keyboard: /water selection (same as v6)
 # =========================
 CB_W_TOGGLE = "w:tg"
 CB_W_DONE = "w:dn"
 CB_W_CANCEL = "w:cn"
 
-
 def _water_state_key() -> str:
     return "water_sel_ids"
-
 
 def _water_rows_key() -> str:
     return "water_rows_cache"
 
-
 def _get_water_selected(context: ContextTypes.DEFAULT_TYPE) -> Set[int]:
     return set(context.user_data.get(_water_state_key(), set()))
-
 
 def _set_water_selected(context: ContextTypes.DEFAULT_TYPE, ids: Set[int]):
     context.user_data[_water_state_key()] = set(ids)
 
-
 def _cache_water_rows(context: ContextTypes.DEFAULT_TYPE, rows: List[Tuple[int, str]]):
     context.user_data[_water_rows_key()] = rows
 
-
 def _get_cached_water_rows(context: ContextTypes.DEFAULT_TYPE) -> Optional[List[Tuple[int, str]]]:
     return context.user_data.get(_water_rows_key())
-
 
 def _selected_preview(rows: List[Tuple[int, str]], selected: Set[int], max_items: int = 3) -> str:
     names = []
@@ -324,7 +312,6 @@ def _selected_preview(rows: List[Tuple[int, str]], selected: Set[int], max_items
         return ", ".join(names) + "…"
     return ", ".join(names)
 
-
 def build_water_keyboard(rows: List[Tuple[int, str]], selected: Set[int]) -> InlineKeyboardMarkup:
     grid: List[List[InlineKeyboardButton]] = []
     row_buf: List[InlineKeyboardButton] = []
@@ -337,12 +324,10 @@ def build_water_keyboard(rows: List[Tuple[int, str]], selected: Set[int]) -> Inl
             row_buf = []
     if row_buf:
         grid.append(row_buf)
-    grid.append(
-        [
-            InlineKeyboardButton("✅Готово", callback_data=CB_W_DONE),
-            InlineKeyboardButton("🌱Не сейчас", callback_data=CB_W_CANCEL),
-        ]
-    )
+    grid.append([
+        InlineKeyboardButton("✅Готово", callback_data=CB_W_DONE),
+        InlineKeyboardButton("🌱Не сейчас", callback_data=CB_W_CANCEL),
+    ])
     return InlineKeyboardMarkup(grid)
 
 
@@ -351,7 +336,6 @@ def build_water_keyboard(rows: List[Tuple[int, str]], selected: Set[int]) -> Inl
 # =========================
 CB_P_TOGGLE = "p:ch"  # p:ch:<plant_id>
 CB_P_CANCEL = "p:cn"
-
 
 def build_photo_keyboard(rows: List[Tuple[int, str]]) -> InlineKeyboardMarkup:
     grid: List[List[InlineKeyboardButton]] = []
@@ -371,32 +355,27 @@ def build_photo_keyboard(rows: List[Tuple[int, str]]) -> InlineKeyboardMarkup:
 CB_A_RUN = "an:run"  # an:run:<plant_id>
 CB_A_CANCEL = "an:cn"
 
-
 def build_analyze_keyboard(plant_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("🧠Проанализировать", callback_data=f"{CB_A_RUN}:{plant_id}")],
-            [InlineKeyboardButton("🌱Не сейчас", callback_data=CB_A_CANCEL)],
-        ]
-    )
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🧠Проанализировать", callback_data=f"{CB_A_RUN}:{plant_id}")],
+        [InlineKeyboardButton("🌱Не сейчас", callback_data=CB_A_CANCEL)],
+    ])
+
 
 
 # =========================
-# Bot handlers
+# Handlers
 # =========================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(UX.START, parse_mode=UX.PARSE_MODE, reply_markup=build_main_menu())
-
 
 async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await update.message.reply_text(UX.CANCEL_OK, parse_mode=UX.PARSE_MODE, reply_markup=build_main_menu())
 
-
 async def cmd_db(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cnt = db_check(update.effective_user.id)
     await update.message.reply_text(UX.db_ok(cnt), parse_mode=UX.PARSE_MODE)
-
 
 async def cmd_plants(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rows = list_plants(update.effective_user.id)
@@ -405,12 +384,10 @@ async def cmd_plants(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await update.message.reply_text(UX.plants(rows), parse_mode=UX.PARSE_MODE)
 
-
 async def cmd_add_plant(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     context.user_data["await_add"] = True
     await update.message.reply_text(UX.ADD_PROMPT, parse_mode=UX.PARSE_MODE)
-
 
 async def cmd_rename(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rows = list_plants(update.effective_user.id)
@@ -421,7 +398,6 @@ async def cmd_rename(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["await_rename"] = True
     await update.message.reply_text(UX.rename_prompt(rows), parse_mode=UX.PARSE_MODE)
 
-
 async def cmd_set_norms(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rows = list_plants(update.effective_user.id)
     if not rows:
@@ -431,7 +407,6 @@ async def cmd_set_norms(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["await_norm"] = True
     await update.message.reply_text(UX.set_norms_prompt(rows), parse_mode=UX.PARSE_MODE)
 
-
 async def cmd_norms(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rows = get_norms(update.effective_user.id)
     if not rows:
@@ -439,14 +414,13 @@ async def cmd_norms(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await update.message.reply_text(UX.norms(rows), parse_mode=UX.PARSE_MODE)
 
-
 async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     res = compute_today(update.effective_user.id, date.today())
     text = UX.today(res)
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("💧 Отметить полив", callback_data="go:water")]])
     await update.message.reply_text(text, parse_mode=UX.PARSE_MODE, reply_markup=keyboard)
+    # keep main menu visible
     await update.message.reply_text("Выбери следующее действие👇", reply_markup=build_main_menu())
-
 
 async def cmd_water(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rows = list_plants(update.effective_user.id)
@@ -467,7 +441,6 @@ async def cmd_water(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode=UX.PARSE_MODE,
     )
 
-
 async def cmd_archive(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rows = list_plants(update.effective_user.id)
     if not rows:
@@ -477,14 +450,12 @@ async def cmd_archive(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["await_archive"] = True
     await update.message.reply_text(UX.archive_prompt(rows), parse_mode=UX.PARSE_MODE)
 
-
 async def cmd_archived(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rows = list_plants_archived(update.effective_user.id)
     if not rows:
         await update.message.reply_text(UX.NO_ARCHIVED, parse_mode=UX.PARSE_MODE)
         return
     await update.message.reply_text(UX.archived_list(rows), parse_mode=UX.PARSE_MODE)
-
 
 async def cmd_restore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rows = list_plants_archived(update.effective_user.id)
@@ -495,7 +466,7 @@ async def cmd_restore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["await_restore"] = True
     await update.message.reply_text(UX.restore_prompt(rows), parse_mode=UX.PARSE_MODE)
 
-
+# ---------- photo ----------
 async def cmd_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rows = list_plants(update.effective_user.id)
     if not rows:
@@ -508,7 +479,6 @@ async def cmd_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode=UX.PARSE_MODE,
         reply_markup=build_photo_keyboard(rows),
     )
-
 
 def _parse_indices_csv(text: str, n_rows: int):
     parts = (text or "").replace(" ", "").split(",")
@@ -526,7 +496,7 @@ def _parse_indices_csv(text: str, n_rows: int):
             out.append(i)
     return out
 
-
+# ---------- callbacks ----------
 async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     if not q:
@@ -606,6 +576,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await q.message.reply_text(UX.WATER_DONE, parse_mode=UX.PARSE_MODE)
         return
 
+    # photo plant choice
     if data == CB_P_CANCEL:
         context.user_data.clear()
         try:
@@ -621,6 +592,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pid = int(data.split(":")[-1])
         except Exception:
             return
+        # store chosen plant_id and wait for photo
         context.user_data.clear()
         context.user_data["await_photo_upload"] = True
         context.user_data["photo_plant_id"] = pid
@@ -630,6 +602,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await q.message.reply_text(UX.PHOTO_SEND, parse_mode=UX.PARSE_MODE)
         return
 
+    # analyze
     if data == CB_A_CANCEL:
         try:
             await q.edit_message_text(UX.CANCEL_OK, parse_mode=UX.PARSE_MODE)
@@ -655,10 +628,12 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.message.reply_text(analysis_text, parse_mode=UX.PARSE_MODE)
         return
 
-
+# ---------- messages ----------
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (update.message.text or "").strip()
 
+
+    # Main menu shortcuts (only when not inside a multi-step flow)
     if not any(k.startswith("await_") for k in context.user_data.keys()):
         if text == MENU_TODAY:
             await cmd_today(update, context)
@@ -674,9 +649,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         if text == MENU_NORMS:
             await cmd_norms(update, context)
-            return
-        if text == MENU_APP:
-            await update.message.reply_text("Открываю приложение👇", reply_markup=build_main_menu())
             return
 
     if context.user_data.get("await_add"):
@@ -720,6 +692,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(UX.NORM_DONE, parse_mode=UX.PARSE_MODE)
         return
 
+    # water text fallback
     if context.user_data.get("await_water_buttons"):
         rows = list_plants(update.effective_user.id)
         idxs = _parse_indices_csv(text, len(rows))
@@ -760,6 +733,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(UX.RESTORE_DONE, parse_mode=UX.PARSE_MODE)
         return
 
+    # photo: if user sends text while waiting photo
     if context.user_data.get("await_photo_upload"):
         await update.message.reply_text(UX.PHOTO_EXPECTED, parse_mode=UX.PARSE_MODE)
         return
@@ -767,6 +741,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.user_data.get("await_photo_upload"):
+        # ignore photos outside flow (or we can guide)
         return
 
     plant_id = context.user_data.get("photo_plant_id")
@@ -775,6 +750,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(UX.CANCEL_OK, parse_mode=UX.PARSE_MODE, reply_markup=build_main_menu())
         return
 
+    # choose best size (last is usually the largest)
     photo = update.message.photo[-1]
     file_id = photo.file_id
     unique_id = getattr(photo, "file_unique_id", None)
@@ -819,14 +795,14 @@ async def _analyze_latest_photo(user_id: int, plant_id: int, context: ContextTyp
     b64 = base64.b64encode(bytes(data)).decode("ascii")
     data_url = f"data:image/jpeg;base64,{b64}"
 
-    today_d = datetime.now(TZ).date()
+    today = datetime.now(TZ).date()
     days_since = None
     if last_watered_at:
         try:
-            days_since = (today_d - last_watered_at.astimezone(TZ).date()).days
+            days_since = (today - last_watered_at.astimezone(TZ).date()).days
         except Exception:
             try:
-                days_since = (today_d - last_watered_at.date()).days
+                days_since = (today - last_watered_at.date()).days
             except Exception:
                 days_since = None
 
@@ -858,15 +834,13 @@ async def _analyze_latest_photo(user_id: int, plant_id: int, context: ContextTyp
     def _call_openai():
         return _openai_client.responses.create(
             model=OPENAI_MODEL,
-            input=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "input_text", "text": instructions + "\n\n" + user_text},
-                        {"type": "input_image", "image_url": data_url},
-                    ],
-                }
-            ],
+            input=[{
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": instructions + "\n\n" + user_text},
+                    {"type": "input_image", "image_url": data_url},
+                ],
+            }],
             max_output_tokens=650,
         )
 
@@ -880,425 +854,35 @@ async def _analyze_latest_photo(user_id: int, plant_id: int, context: ContextTyp
     return f"🧠 <b>Анализ фото: {UX._esc(plant_name)}</b>\n\n<i>{safe}</i>"
 
 
-# =========================
-# Telegram Mini App auth (initData validation)
-# =========================
-TMA_TTL_SECONDS = 300
-
-
-def _parse_initdata(init_data: str) -> Dict[str, str]:
-    out: Dict[str, str] = {}
-    for part in (init_data or "").split("&"):
-        if not part:
-            continue
-        if "=" not in part:
-            continue
-        k, v = part.split("=", 1)
-        out[k] = v
-    return out
-
-
-def _validate_initdata(init_data: str, bot_token: str) -> Dict[str, Any]:
-    if not init_data:
-        raise HTTPException(status_code=401, detail="Missing initData")
-
-    data = _parse_initdata(init_data)
-    recv_hash = data.get("hash")
-    if not recv_hash:
-        raise HTTPException(status_code=401, detail="Missing hash")
-
-    pairs = []
-    for k, v in data.items():
-        if k == "hash":
-            continue
-        pairs.append(f"{k}={v}")
-    pairs.sort()
-    data_check_string = "\n".join(pairs)
-
-    secret_key = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
-    calc_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
-
-    if not hmac.compare_digest(calc_hash, recv_hash):
-        raise HTTPException(status_code=401, detail="Bad initData signature")
-
-    auth_date_raw = data.get("auth_date")
-    if not auth_date_raw or not auth_date_raw.isdigit():
-        raise HTTPException(status_code=401, detail="Bad auth_date")
-
-    auth_ts = int(auth_date_raw)
-    now_ts = int(datetime.now(timezone.utc).timestamp())
-    if abs(now_ts - auth_ts) > TMA_TTL_SECONDS:
-        raise HTTPException(status_code=401, detail="initData expired")
-
-    user_json = data.get("user")
-    if not user_json:
-        raise HTTPException(status_code=401, detail="Missing user")
-
-    try:
-        user = json.loads(_url_unquote(user_json))
-    except Exception:
-        raise HTTPException(status_code=401, detail="Bad user json")
-
-    return {"user": user, "auth_date": auth_ts}
-
-
-def _url_unquote(s: str) -> str:
-    # minimal URL decode for Telegram initData values
-    # (Telegram encodes JSON as percent-encoded string)
-    from urllib.parse import unquote
-
-    return unquote(s)
-
-
-# =========================
-# Mini App UI
-# =========================
-APP_HTML = """<!doctype html>
-<html lang="ru">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>PlantBuddy</title>
-  <style>
-    :root{--bg:#0b0f14;--card:#121823;--text:#e8eef7;--muted:#98a6b8;--line:#1f2a3a;--btn:#2a76ff;}
-    body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Inter,Arial,sans-serif;}
-    .wrap{max-width:720px;margin:0 auto;padding:16px 14px 80px;}
-    .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
-    .h1{font-size:18px;font-weight:700;}
-    .sub{font-size:12px;color:var(--muted);}
-    .cards{display:flex;flex-direction:column;gap:10px;margin-top:12px;}
-    .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;display:flex;gap:10px;align-items:flex-start;}
-    .name{font-size:15px;font-weight:700;line-height:1.2;margin:0 0 6px;}
-    .meta{font-size:12px;color:var(--muted);}
-    .badge{display:inline-block;font-size:11px;padding:4px 8px;border-radius:999px;border:1px solid var(--line);margin-right:6px;}
-    .b-due{border-color:#2a76ff;}
-    .b-over{border-color:#ff9f2a;}
-    .b-unk{border-color:#7a889b;}
-    .b-ok{border-color:#2aff89;}
-    .chk{margin-top:2px;transform:scale(1.15);}
-    .btnbar{position:fixed;left:0;right:0;bottom:0;background:rgba(11,15,20,.92);backdrop-filter:blur(10px);border-top:1px solid var(--line);}
-    .btnwrap{max-width:720px;margin:0 auto;padding:10px 14px;display:flex;gap:10px;align-items:center;}
-    button{flex:1;border:0;border-radius:12px;padding:12px 14px;font-weight:800;background:var(--btn);color:white;font-size:14px;}
-    button:disabled{opacity:.45;}
-    .hint{font-size:12px;color:var(--muted);margin-top:10px;}
-    .err{color:#ff6b6b;font-size:12px;margin-top:10px;white-space:pre-wrap;}
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <div class="top">
-      <div>
-        <div class="h1">📅Сегодня</div>
-        <div class="sub" id="summary">Загрузка…</div>
-      </div>
-    </div>
-
-    <div class="cards" id="cards"></div>
-    <div class="hint">ℹ️Анализ фото отправляет изображение в OpenAI (только если ты нажмёшь анализ в боте).</div>
-    <div class="err" id="err"></div>
-  </div>
-
-  <div class="btnbar">
-    <div class="btnwrap">
-      <button id="btn" disabled>✅Отметить полив</button>
-    </div>
-  </div>
-
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
-<script>
-  const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
-  if (tg) { tg.expand(); }
-
-  const initData = tg ? tg.initData : "";
-  const cardsEl = document.getElementById('cards');
-  const summaryEl = document.getElementById('summary');
-  const errEl = document.getElementById('err');
-  const btn = document.getElementById('btn');
-
-  const selected = new Set();
-
-  function badge(kind, text){
-    const span = document.createElement('span');
-    span.className = 'badge ' + kind;
-    span.textContent = text;
-    return span;
-  }
-
-  function renderCard(item){
-    const row = document.createElement('div');
-    row.className = 'card';
-
-    const chk = document.createElement('input');
-    chk.type = 'checkbox';
-    chk.className = 'chk';
-    chk.addEventListener('change', () => {
-      if (chk.checked) selected.add(item.id); else selected.delete(item.id);
-      btn.disabled = selected.size === 0;
-    });
-
-    const body = document.createElement('div');
-    body.style.flex = '1';
-
-    const name = document.createElement('div');
-    name.className = 'name';
-    name.textContent = item.name;
-
-    const meta = document.createElement('div');
-    meta.className = 'meta';
-
-    const badges = document.createElement('div');
-    if (item.status === 'due') badges.appendChild(badge('b-due','Пора'));
-    else if (item.status === 'overdue') badges.appendChild(badge('b-over','Просрочено'));
-    else if (item.status === 'unknown') badges.appendChild(badge('b-unk','Нужно настроить'));
-    else badges.appendChild(badge('b-ok','Ок'));
-
-    meta.appendChild(badges);
-
-    const line = document.createElement('div');
-    line.textContent = item.details;
-    meta.appendChild(line);
-
-    body.appendChild(name);
-    body.appendChild(meta);
-
-    row.appendChild(chk);
-    row.appendChild(body);
-    return row;
-  }
-
-  async function api(path, opts={}){
-    const headers = Object.assign({}, opts.headers || {}, {
-      'X-Telegram-InitData': initData,
-      'Content-Type': 'application/json'
-    });
-    const res = await fetch(path, Object.assign({}, opts, { headers }));
-    const text = await res.text();
-    if (!res.ok) throw new Error(text || ('HTTP '+res.status));
-    try { return JSON.parse(text); } catch(e){ return text; }
-  }
-
-  async function load(){
-    errEl.textContent = '';
-    cardsEl.innerHTML = '';
-    selected.clear();
-    btn.disabled = true;
-    try{
-      const data = await api('/api/today');
-      summaryEl.textContent = data.summary;
-      data.items.forEach(i => cardsEl.appendChild(renderCard(i)));
-      if (data.items.length === 0) {
-        const empty = document.createElement('div');
-        empty.className = 'meta';
-        empty.textContent = 'Пока нет растений. Добавь их в боте через /add_plant';
-        cardsEl.appendChild(empty);
-      }
-    }catch(e){
-      errEl.textContent = 'Ошибка загрузки: ' + e.message;
-      summaryEl.textContent = 'Не получилось загрузить данные';
-    }
-  }
-
-  btn.addEventListener('click', async () => {
-    if (selected.size === 0) return;
-    btn.disabled = true;
-    try{
-      await api('/api/water', { method:'POST', body: JSON.stringify({ plant_ids: Array.from(selected) }) });
-      await load();
-      if (tg) tg.HapticFeedback && tg.HapticFeedback.notificationOccurred('success');
-    }catch(e){
-      errEl.textContent = 'Ошибка отметки полива: ' + e.message;
-    }finally{
-      btn.disabled = selected.size === 0;
-    }
-  });
-
-  load();
-</script>
-</body>
-</html>"""
-
-
-# =========================
-# FastAPI app (serves Mini App + webhook)
-# =========================
-api = FastAPI()
-
-
-# Telegram bot app (ptb)
-ptb_app: Optional[Application] = None
-
-
-@api.on_event("startup")
-async def _startup():
-    global ptb_app
-    init_db()
-
-    ptb_app = Application.builder().token(BOT_TOKEN).build()
-
-    ptb_app.add_handler(CommandHandler("start", start))
-    ptb_app.add_handler(CommandHandler("cancel", cmd_cancel))
-    ptb_app.add_handler(CommandHandler("add_plant", cmd_add_plant))
-    ptb_app.add_handler(CommandHandler("plants", cmd_plants))
-    ptb_app.add_handler(CommandHandler("rename_plant", cmd_rename))
-    ptb_app.add_handler(CommandHandler("set_norms", cmd_set_norms))
-    ptb_app.add_handler(CommandHandler("norms", cmd_norms))
-    ptb_app.add_handler(CommandHandler("today", cmd_today))
-    ptb_app.add_handler(CommandHandler("water", cmd_water))
-    ptb_app.add_handler(CommandHandler("archive", cmd_archive))
-    ptb_app.add_handler(CommandHandler("archived", cmd_archived))
-    ptb_app.add_handler(CommandHandler("restore", cmd_restore))
-    ptb_app.add_handler(CommandHandler("photo", cmd_photo))
-    ptb_app.add_handler(CommandHandler("db", cmd_db))
-
-    ptb_app.add_handler(CallbackQueryHandler(on_callback))
-    ptb_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    ptb_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-
-    await ptb_app.initialize()
-    # Ensure Telegram knows where to send updates (Render redeploys can change routing)
-    await ptb_app.bot.set_webhook(url=f"{BASE_URL}/webhook")
-    await ptb_app.start()
-
-
-@api.on_event("shutdown")
-async def _shutdown():
-    global ptb_app
-    if ptb_app:
-        await ptb_app.stop()
-        await ptb_app.shutdown()
-        ptb_app = None
-
-
-@api.get("/", response_class=PlainTextResponse)
-def health():
-    return "ok"
-
-
-@api.get("/app", response_class=HTMLResponse)
-def app_page():
-    return HTMLResponse(APP_HTML)
-
-
-@api.post("/webhook")
-async def telegram_webhook(request: Request):
-    global ptb_app
-    if not ptb_app:
-        raise HTTPException(status_code=503, detail="Bot not ready")
-
-    data = await request.json()
-    upd = Update.de_json(data, ptb_app.bot)
-    await ptb_app.process_update(upd)
-    return JSONResponse({"ok": True})
-
-
-def _tma_user_id_from_header(x_telegram_initdata: str) -> int:
-    parsed = _validate_initdata(x_telegram_initdata, BOT_TOKEN)
-    user = parsed["user"]
-    uid = user.get("id")
-    if not isinstance(uid, int):
-        raise HTTPException(status_code=401, detail="Bad user id")
-    return uid
-
-
-@api.get("/api/today")
-def api_today(x_telegram_initdata: str = Header("", alias="X-Telegram-InitData")):
-    user_id = _tma_user_id_from_header(x_telegram_initdata)
-
-    rows = list_plants_full(user_id)
-    today_d = datetime.now(TZ).date()
-
-    items = []
-    due_cnt = 0
-    over_cnt = 0
-    unk_cnt = 0
-
-    for pid, name, every, last in rows:
-        status = "ok"
-        details_parts = []
-
-        if not every or not last:
-            status = "unknown"
-            unk_cnt += 1
-            if every:
-                details_parts.append(f"норма {int(every)} дн")
-            else:
-                details_parts.append("норма не задана")
-            if last:
-                try:
-                    ds = (today_d - last.astimezone(TZ).date()).days
-                    details_parts.append(f"последний полив {ds} дн назад")
-                except Exception:
-                    details_parts.append("последний полив есть")
-            else:
-                details_parts.append("нет даты последнего полива")
-        else:
-            try:
-                last_d = last.astimezone(TZ).date()
-            except Exception:
-                last_d = last.date()
-            due_d = last_d + timedelta_days(int(every))
-            ds = (today_d - last_d).days
-
-            if due_d < today_d:
-                status = "overdue"
-                over_cnt += 1
-                overdue_by = (today_d - due_d).days
-                details_parts.append(f"просрочено на {overdue_by} дн")
-            elif due_d == today_d:
-                status = "due"
-                due_cnt += 1
-                details_parts.append("пора полить")
-            else:
-                status = "ok"
-
-            details_parts.append(f"норма {int(every)} дн")
-            details_parts.append(f"последний полив {ds} дн назад")
-
-        items.append(
-            {
-                "id": int(pid),
-                "name": str(name),
-                "status": status,
-                "details": " · ".join(details_parts),
-            }
-        )
-
-    # Sort: overdue -> due -> unknown -> ok
-    prio = {"overdue": 0, "due": 1, "unknown": 2, "ok": 3}
-    items.sort(key=lambda x: (prio.get(x["status"], 9), x["name"].lower()))
-
-    summary = f"Пора: {due_cnt} · Просрочено: {over_cnt} · Нужно настроить: {unk_cnt}"
-
-    return JSONResponse({"summary": summary, "items": items})
-
-
-@api.post("/api/water")
-async def api_water(request: Request, x_telegram_initdata: str = Header("", alias="X-Telegram-InitData")):
-    user_id = _tma_user_id_from_header(x_telegram_initdata)
-
-    try:
-        payload = await request.json()
-    except Exception:
-        raise HTTPException(status_code=400, detail="Bad JSON")
-
-    plant_ids = payload.get("plant_ids")
-    if not isinstance(plant_ids, list) or not all(isinstance(x, int) for x in plant_ids):
-        raise HTTPException(status_code=400, detail="plant_ids must be int[]")
-
-    n = log_water_many(user_id, plant_ids, datetime.now(TZ))
-    return JSONResponse({"updated": n})
-
-
-def timedelta_days(n: int):
-    from datetime import timedelta
-
-    return timedelta(days=n)
-
-
 def main():
-    import uvicorn
+    init_db()
+    app = Application.builder().token(BOT_TOKEN).build()
 
-    uvicorn.run(api, host="0.0.0.0", port=PORT)
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("cancel", cmd_cancel))
+    app.add_handler(CommandHandler("add_plant", cmd_add_plant))
+    app.add_handler(CommandHandler("plants", cmd_plants))
+    app.add_handler(CommandHandler("rename_plant", cmd_rename))
+    app.add_handler(CommandHandler("set_norms", cmd_set_norms))
+    app.add_handler(CommandHandler("norms", cmd_norms))
+    app.add_handler(CommandHandler("today", cmd_today))
+    app.add_handler(CommandHandler("water", cmd_water))
+    app.add_handler(CommandHandler("archive", cmd_archive))
+    app.add_handler(CommandHandler("archived", cmd_archived))
+    app.add_handler(CommandHandler("restore", cmd_restore))
+    app.add_handler(CommandHandler("photo", cmd_photo))
+    app.add_handler(CommandHandler("db", cmd_db))
+
+    app.add_handler(CallbackQueryHandler(on_callback))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path="webhook",
+        webhook_url=f"{BASE_URL}/webhook",
+    )
 
 
 if __name__ == "__main__":
