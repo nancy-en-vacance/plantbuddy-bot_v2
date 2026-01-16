@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>PlantBuddy</title>
+  <style>
+    :root{
+      --bg:#0b0f19;
+      --card:#141a2a;
+      --muted:#a7b0c0;
+      --text:#e9eef8;
+      --danger:#ff5a5f;
+      --ok:#33d17a;
+      --warn:#ffb020;
+      --border:rgba(255,255,255,.08);
+      --btn:#1f3b82;
+      --btnText:#e9eef8;
+      --shadow:0 8px 28px rgba(0,0,0,.45);
+      --radius:16px;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Arial,sans-serif;
+      background:var(--bg);
+      color:var(--text);
+    }
+    .wrap{
+      max-width:720px;
+      margin:0 auto;
+      padding:16px 16px calc(24px + env(safe-area-inset-bottom));
+    }
+    .hrow{display:flex;align-items:center;gap:10px;margin:8px 0 6px}
+    .hicon{font-size:18px}
+    h1{font-size:28px;line-height:1.1;margin:0}
+    .sub{color:var(--muted);margin:0 0 14px}
+    .banner{
+      margin:10px 0 14px;
+      padding:12px 12px;
+      border:1px solid var(--border);
+      border-radius:12px;
+      color:var(--muted);
+      background:rgba(255,255,255,.03);
+    }
+    .err{
+      margin-top:10px;
+      color:var(--danger);
+      white-space:pre-wrap;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+      font-size:12px;
+    }
+    .actions{
+      position:sticky;
+      bottom:0;
+      padding:12px 0 calc(12px + env(safe-area-inset-bottom));
+      background:linear-gradient(180deg, rgba(11,15,25,0) 0%, rgba(11,15,25,.7) 18%, rgba(11,15,25,1) 42%);
+    }
+    .btn{
+      width:100%;
+      border:0;
+      border-radius:14px;
+      padding:14px 14px;
+      font-size:16px;
+      font-weight:600;
+      background:var(--btn);
+      color:var(--btnText);
+      box-shadow:var(--shadow);
+    }
+    .btn:disabled{opacity:.55}
+    .stats{
+      display:flex;flex-wrap:wrap;gap:10px;
+      margin:10px 0 14px;
+    }
+    .pill{
+      border:1px solid var(--border);
+      padding:8px 10px;
+      border-radius:999px;
+      color:var(--muted);
+      background:rgba(255,255,255,.03);
+      font-size:13px;
+    }
+    .list{display:flex;flex-direction:column;gap:10px;margin:12px 0 18px}
+    .card{
+      border:1px solid var(--border);
+      background:var(--card);
+      border-radius:var(--radius);
+      padding:12px 12px;
+      display:flex;
+      gap:12px;
+      align-items:flex-start;
+    }
+    .check{
+      margin-top:4px;
+      width:22px;height:22px;
+      accent-color:#2b66ff;
+    }
+    .meta{flex:1;min-width:0}
+    .title{font-size:16px;font-weight:700;margin:0 0 4px;word-break:break-word}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .tag{
+      font-size:12px;
+      padding:4px 8px;
+      border-radius:999px;
+      border:1px solid var(--border);
+      background:rgba(255,255,255,.03);
+      color:var(--muted);
+    }
+    .tag.ok{color:var(--ok);border-color:rgba(51,209,122,.35);background:rgba(51,209,122,.08)}
+    .tag.warn{color:var(--warn);border-color:rgba(255,176,32,.35);background:rgba(255,176,32,.08)}
+    .tag.danger{color:var(--danger);border-color:rgba(255,90,95,.35);background:rgba(255,90,95,.08)}
+    .tag.neutral{color:var(--muted)}
+    .small{color:var(--muted);font-size:13px;margin:6px 0 0}
+    .skeleton{
+      border:1px solid var(--border);
+      background:rgba(255,255,255,.04);
+      border-radius:var(--radius);
+      height:68px;
+      animation:pulse 1.2s ease-in-out infinite;
+    }
+    @keyframes pulse{0%{opacity:.6}50%{opacity:1}100%{opacity:.6}}
+  </style>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hrow">
+      <div class="hicon">📅</div>
+      <h1>Сегодня</h1>
+    </div>
+    <p class="sub" id="subtitle">Загружаю…</p>
+
+    <div class="stats" id="stats" style="display:none"></div>
+
+    <div class="list" id="list">
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
+    </div>
+
+    <div class="banner">
+      ℹ️Анализ фото отправляет изображение в OpenAI(только если ты нажмёшь анализ в боте).
+      <div class="err" id="error" style="display:none"></div>
+    </div>
+
+    <div class="actions">
+      <button class="btn" id="btnWater" disabled>✅Отметить полив</button>
+    </div>
+  </div>
+
+<script>
+(function(){
+  const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+  if (tg) {
+    tg.ready();
+    try { tg.expand(); } catch(e){}
+  }
+
+  const initData = tg ? (tg.initData || "") : "";
+  const els = {
+    subtitle: document.getElementById("subtitle"),
+    stats: document.getElementById("stats"),
+    list: document.getElementById("list"),
+    error: document.getElementById("error"),
+    btnWater: document.getElementById("btnWater"),
+  };
+
+  const state = {
+    items: [],
+    selected: new Set(),
+    loading: true,
+  };
+
+  function showError(msg){
+    els.error.style.display = "block";
+    els.error.textContent = msg;
+  }
+
+  function apiFetch(path, opts){
+    opts = opts || {};
+    opts.headers = Object.assign({}, opts.headers || {}, {
+      "X-Telegram-InitData": initData,
+      "Content-Type": "application/json",
+    });
+    return fetch(path, opts);
+  }
+
+  function statusTag(s){
+    // expected: overdue / due / ok / unknown
+    if (s === "overdue") return {cls:"danger", label:"Просрочено"};
+    if (s === "due") return {cls:"warn", label:"Пора"};
+    if (s === "unknown") return {cls:"neutral", label:"Нужно настроить"};
+    return {cls:"ok", label:"Ок"};
+  }
+
+  function render(){
+    // subtitle
+    if (state.loading){
+      els.subtitle.textContent = "Загружаю…";
+    } else {
+      const total = state.items.length;
+      const sel = state.selected.size;
+      els.subtitle.textContent = total ? `Растений: ${total} · Выбрано: ${sel}` : "Пока нет растений. Добавь их в боте через /add_plant";
+    }
+
+    // stats
+    if (!state.loading && state.items.length){
+      const counts = {overdue:0, due:0, ok:0, unknown:0};
+      for (const it of state.items){ counts[it.status] = (counts[it.status]||0) + 1; }
+      els.stats.innerHTML = `
+        <div class="pill">🧡Просрочено: ${counts.overdue||0}</div>
+        <div class="pill">⏰Пора: ${counts.due||0}</div>
+        <div class="pill">✅Ок: ${counts.ok||0}</div>
+        <div class="pill">ℹ️Настроить: ${counts.unknown||0}</div>
+      `;
+      els.stats.style.display = "flex";
+    } else {
+      els.stats.style.display = "none";
+    }
+
+    // list
+    els.list.innerHTML = "";
+    if (state.loading){
+      for (let i=0;i<3;i++){
+        const sk = document.createElement("div");
+        sk.className = "skeleton";
+        els.list.appendChild(sk);
+      }
+    } else if (!state.items.length){
+      // empty
+      const empty = document.createElement("div");
+      empty.className = "banner";
+      empty.textContent = "Тут пока пусто. Добавь растения в боте через /add_plant.";
+      els.list.appendChild(empty);
+    } else {
+      for (const it of state.items){
+        const card = document.createElement("div");
+        card.className = "card";
+
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.className = "check";
+        cb.checked = state.selected.has(it.id);
+        cb.addEventListener("change", ()=>{
+          if (cb.checked) state.selected.add(it.id);
+          else state.selected.delete(it.id);
+          render();
+        });
+
+        const meta = document.createElement("div");
+        meta.className = "meta";
+
+        const t = document.createElement("div");
+        t.className = "title";
+        t.textContent = it.name;
+
+        const row = document.createElement("div");
+        row.className = "row";
+        const tag = statusTag(it.status);
+        const st = document.createElement("span");
+        st.className = `tag ${tag.cls}`;
+        st.textContent = tag.label;
+
+        const n = document.createElement("span");
+        n.className = "tag";
+        n.textContent = it.norm_days ? `Норма: ${it.norm_days}дн` : "Норма: —";
+
+        row.appendChild(st);
+        row.appendChild(n);
+
+        const small = document.createElement("div");
+        small.className = "small";
+        const parts = [];
+        if (it.days_since_last_watering !== null && it.days_since_last_watering !== undefined){
+          parts.push(`Последний полив: ${it.days_since_last_watering}дн назад`);
+        } else {
+          parts.push("Последний полив: —");
+        }
+        if (it.due_in_days !== null && it.due_in_days !== undefined){
+          if (it.due_in_days < 0) parts.push(`Просрочка: ${Math.abs(it.due_in_days)}дн`);
+          else if (it.due_in_days === 0) parts.push("Пора сегодня");
+          else parts.push(`До полива: ${it.due_in_days}дн`);
+        }
+        small.textContent = parts.join(" · ");
+
+        meta.appendChild(t);
+        meta.appendChild(row);
+        meta.appendChild(small);
+
+        card.appendChild(cb);
+        card.appendChild(meta);
+
+        // tap anywhere toggles checkbox
+        card.addEventListener("click", (e)=>{
+          if (e.target === cb) return;
+          cb.checked = !cb.checked;
+          cb.dispatchEvent(new Event("change"));
+        });
+
+        els.list.appendChild(card);
+      }
+    }
+
+    // button
+    els.btnWater.disabled = state.selected.size === 0 || state.loading;
+  }
+
+  async function load(){
+    state.loading = true;
+    render();
+
+    if (!initData){
+      state.loading = false;
+      render();
+      showError('Ошибка загрузки: {"detail":"Missing initData"}');
+      return;
+    }
+
+    try{
+      const r = await apiFetch("/api/today", { method: "GET" });
+      const j = await r.json().catch(()=> ({}));
+      if (!r.ok){
+        throw new Error(JSON.stringify(j));
+      }
+
+      // Expect backend to return: { items: [...] }
+      state.items = (j.items || []).map(x => ({
+        id: x.id,
+        name: x.name,
+        status: x.status || "ok",
+        norm_days: x.norm_days ?? null,
+        days_since_last_watering: x.days_since_last_watering ?? null,
+        due_in_days: x.due_in_days ?? null,
+      }));
+
+      // Sort: overdue -> due -> unknown -> ok
+      const order = {overdue:0, due:1, unknown:2, ok:3};
+      state.items.sort((a,b)=> (order[a.status]??9) - (order[b.status]??9));
+
+      state.loading = false;
+      render();
+    } catch(e){
+      state.loading = false;
+      render();
+      showError("Ошибка загрузки: " + String(e && e.message ? e.message : e));
+    }
+  }
+
+  els.btnWater.addEventListener("click", async ()=>{
+    if (state.selected.size === 0) return;
+    els.btnWater.disabled = true;
+    els.btnWater.textContent = "Отмечаю…";
+
+    try{
+      const body = { plant_ids: Array.from(state.selected) };
+      const r = await apiFetch("/api/water", { method: "POST", body: JSON.stringify(body) });
+      const j = await r.json().catch(()=> ({}));
+      if (!r.ok){
+        throw new Error(JSON.stringify(j));
+      }
+      state.selected.clear();
+      await load();
+      els.btnWater.textContent = "✅Отметить полив";
+    } catch(e){
+      showError("Ошибка отметки: " + String(e && e.message ? e.message : e));
+      els.btnWater.textContent = "✅Отметить полив";
+      els.btnWater.disabled = false;
+    }
+  });
+
+  load();
+})();
+</script>
+</body>
+</html>
