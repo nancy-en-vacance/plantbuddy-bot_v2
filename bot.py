@@ -48,6 +48,50 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4.1-mini")
 _openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
+# =========================
+# Prompt loading (photo analysis)
+# =========================
+_PROMPT_CACHE: str | None = None
+
+def load_photo_prompt() -> str:
+    """Loads prompt text for photo analysis.
+
+    Tries (in order):
+      1) local file prompt.txt (repo root)
+      2) env PROMPT_TEXT (inline prompt)
+
+    Falls back to a minimal safe prompt if nothing is available.
+    """
+    global _PROMPT_CACHE
+    if _PROMPT_CACHE:
+        return _PROMPT_CACHE
+
+    # 1) file-based prompt
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+        p = os.path.join(here, 'prompt.txt')
+        if os.path.exists(p):
+            with open(p, 'r', encoding='utf-8') as f:
+                _PROMPT_CACHE = f.read().strip()
+                if _PROMPT_CACHE:
+                    return _PROMPT_CACHE
+    except Exception:
+        pass
+
+    # 2) env-based prompt
+    env_txt = os.environ.get('PROMPT_TEXT', '').strip()
+    if env_txt:
+        _PROMPT_CACHE = env_txt
+        return _PROMPT_CACHE
+
+    # fallback (minimal, safe)
+    _PROMPT_CACHE = (
+        'You are a careful plant-care assistant. '
+        'Separate facts vs hypotheses. Ask for clarification if needed. '
+        'Avoid aggressive chemicals. Output in Russian with clear bullets.'
+    )
+    return _PROMPT_CACHE
+
 
 # =========================
 # UX layer (constants/templates)
@@ -762,54 +806,7 @@ async def _analyze_latest_photo(user_id: int, plant_id: int, context: ContextTyp
     ]
     if caption:
         ctx_lines.append(f"User caption: {caption}")
-
-    instructions = (
-        "You are a plant care assistant analyzing the condition of a houseplant based on a photo and system-provided context.\n\n"
-        "Your task is to provide a careful, non-alarmist assessment focused on plant care, not medical or professional diagnosis.\n\n"
-        "STRICT RULES (must follow):\n"
-        "- Clearly separate what is DIRECTLY VISIBLE in the photo from what is only a hypothesis.\n"
-        "- Do NOT state or assume the following unless they are clearly visible in the image:\n"
-        "  - lighting conditions\n"
-        "  - temperature\n"
-        "  - air humidity\n"
-        "  - drafts\n"
-        "  - presence of a water tray\n"
-        "  - exact placement relative to a window\n"
-        "- If information is insufficient, ASK FOR CLARIFICATION instead of making assumptions.\n"
-        "- Do not use categorical or absolute language (e.g. “definitely”, “certainly”, “this disease”).\n"
-        "- Do not recommend aggressive chemicals or toxic treatments.\n"
-        "- Keep the response practical, calm, and supportive.\n\n"
-        "---\n\n"
-        "SYSTEM CONTEXT (from plant memory):\n"
-        "- Plant name: {plant_name}\n"
-        "- Days since last watering: {days_since_last_watering}\n"
-        "- Watering norm: every {watering_norm} days\n\n"
-        "If any of this information is missing, explicitly state that the data is unavailable and factor this uncertainty into your reasoning.\n\n"
-        "---\n\n"
-        "OUTPUT LANGUAGE:\n"
-        "- Produce the final answer in RUSSIAN.\n"
-        "- Tone: warm, friendly, non-clinical, calm.\n"
-        "- No emojis overload. Friendly but serious.\n\n"
-        "---\n\n"
-        "RESPONSE FORMAT (use exactly this structure):\n\n"
-        "1) Краткий вывод\n"
-        "Give a general, non-diagnostic summary of the plant’s current condition.\n\n"
-        "2) Что видно на фото:\n"
-        "- Bullet points describing only what is directly visible in the image.\n\n"
-        "3) Возможные причины:\n"
-        "- Cause — probability (high / medium / low)\n"
-        "Base probabilities on visible signs and provided watering context.\n\n"
-        "4) Что сделать сейчас:\n"
-        "Сегодня:\n"
-        "- Practical immediate steps.\n\n"
-        "В ближайшую неделю:\n"
-        "- Short-term care adjustments.\n\n"
-        "Не делать:\n"
-        "- Actions that could worsen the situation.\n\n"
-        "IMPORTANT:\n"
-        "This is not a professional or medical diagnosis.\n"
-        "If confidence is low, clearly state this and prioritize observation over intervention.\n"
-    )
+    instructions = load_photo_prompt()
 
     user_text = "Context:\n" + "\n".join(ctx_lines) + "\n\nPlease analyze the image."
 
