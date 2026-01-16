@@ -1,12 +1,15 @@
 # bot.py — Photo v1 (flow A): /photo -> choose plant -> send photo -> save tg file_id
 import os
 import html as _html
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
 from typing import Set, Optional, Tuple, List
 
 import asyncio
 import base64
+import hmac
+import hashlib
+from urllib.parse import parse_qsl
 from openai import OpenAI
 
 from telegram import (
@@ -15,6 +18,7 @@ from telegram import (
     InlineKeyboardMarkup,
     ReplyKeyboardMarkup,
     KeyboardButton,
+    WebAppInfo,
 )
 from telegram.ext import (
     Application,
@@ -29,6 +33,7 @@ from storage import (
     init_db,
     add_plant,
     list_plants,
+    list_plants_full,
     rename_plant,
     set_norm,
     get_norms,
@@ -41,6 +46,9 @@ from storage import (
     get_plant_context,
     get_last_photo_for_plant,
 )
+
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import HTMLResponse, JSONResponse
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 BASE_URL = os.environ["BASE_URL"].rstrip("/")
@@ -256,13 +264,14 @@ MENU_WATER = "💧Отметить полив"
 MENU_PHOTO = "💬Спросить про растение"
 MENU_PLANTS = "🪴Посмотреть все растения"
 MENU_NORMS = "💦Узнать частоту полива"
+MENU_APP = "🧾Открыть PlantBuddy"
 
 def build_main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
             [KeyboardButton(MENU_TODAY), KeyboardButton(MENU_WATER)],
             [KeyboardButton(MENU_PHOTO), KeyboardButton(MENU_PLANTS)],
-            [KeyboardButton(MENU_NORMS)],
+            [KeyboardButton(MENU_NORMS), KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app"))],
         ],
         resize_keyboard=True,
         is_persistent=True,
@@ -312,7 +321,7 @@ def build_water_keyboard(rows: List[Tuple[int, str]], selected: Set[int]) -> Inl
     grid: List[List[InlineKeyboardButton]] = []
     row_buf: List[InlineKeyboardButton] = []
     for pid, name in rows:
-        label = f"{'✅ ' if pid in selected else ''}{name}"
+        label = f"{'✅' if pid in selected else ''}{name}"
         btn = InlineKeyboardButton(label, callback_data=f"{CB_W_TOGGLE}:{pid}")
         row_buf.append(btn)
         if len(row_buf) == 2:
@@ -413,7 +422,7 @@ async def cmd_norms(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     res = compute_today(update.effective_user.id, date.today())
     text = UX.today(res)
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("💧 Отметить полив", callback_data="go:water")]])
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("💧Отметить полив", callback_data="go:water")]])
     await update.message.reply_text(text, parse_mode=UX.PARSE_MODE, reply_markup=keyboard)
     # keep main menu visible
     await update.message.reply_text("Выбери следующее действие👇", reply_markup=build_main_menu())
@@ -763,6 +772,10 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await update.message.reply_text(UX.PHOTO_SAVED, parse_mode=UX.PARSE_MODE)
     await update.message.reply_text(
+        "ℹ️При анализе фото оно отправляется в OpenAI (только если ты нажмёшь кнопку анализа).",
+        parse_mode=UX.PARSE_MODE,
+    )
+    await update.message.reply_text(
         UX.PHOTO_ANALYZE_OFFER,
         parse_mode=UX.PARSE_MODE,
         reply_markup=build_analyze_keyboard(int(plant_id)),
@@ -850,8 +863,284 @@ async def _analyze_latest_photo(user_id: int, plant_id: int, context: ContextTyp
     return f"🧠 <b>Анализ фото: {UX._esc(plant_name)}</b>\n\n<i>{safe}</i>"
 
 
-def main():
-    init_db()
+# =========================
+# Mini App (Telegram WebApp) + API (FastAPI)
+# =========================
+WEBAPP_HTML = """<!doctype html>
+<html lang=\"ru\">
+<head>
+  <meta charset=\"utf-8\" />
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+  <title>PlantBuddy</title>
+  <script src=\"https://telegram.org/js/telegram-web-app.js\"></script>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;padding:16px;}
+    h1{font-size:18px;margin:0 0 12px 0;}
+    .muted{opacity:.7;font-size:12px;}
+    .row{display:flex;gap:8px;align-items:center;}
+    .card{border:1px solid rgba(0,0,0,.12);border-radius:12px;padding:12px;margin:10px 0;}
+    .title{font-weight:600;}
+    .badge{font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid rgba(0,0,0,.12);}
+    .badge.due{border-color:#d97706;}
+    .badge.over{border-color:#b91c1c;}
+    .badge.unknown{border-color:#6b7280;}
+    .badge.ok{border-color:#16a34a;}
+    button{width:100%;border:0;border-radius:12px;padding:12px 14px;font-size:15px;font-weight:600;}
+    button:disabled{opacity:.5;}
+    .sp{height:10px;}
+  </style>
+</head>
+<body>
+  <h1>📅Сегодня</h1>
+  <div id=\"summary\" class=\"muted\">Загружаю…</div>
+  <div class=\"sp\"></div>
+  <div id=\"list\"></div>
+  <div class=\"sp\"></div>
+  <button id=\"btn\" disabled>✅Отметить полив</button>
+  <div class=\"sp\"></div>
+  <div class=\"muted\">При анализе фото оно отправляется в OpenAI — только по твоей кнопке.</div>
+
+  <script>
+    const tg = window.Telegram?.WebApp;
+    if (tg) { tg.expand(); }
+    const initData = tg?.initData || "";
+
+    const state = { items: [], selected: new Set() };
+
+    function esc(s){
+      return (s||"").replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;','\'':'&#39;'}[c]));
+    }
+
+    function badgeClass(st){
+      if (st === 'overdue') return 'over';
+      if (st === 'due') return 'due';
+      if (st === 'unknown') return 'unknown';
+      return 'ok';
+    }
+
+    function badgeText(it){
+      if (it.status === 'overdue') return `Просрочено (${it.overdue_by}д)`;
+      if (it.status === 'due') return 'Пора';
+      if (it.status === 'unknown') return 'Нужно настроить';
+      return 'Ок';
+    }
+
+    function render(){
+      const list = document.getElementById('list');
+      list.innerHTML = '';
+      for (const it of state.items){
+        const checked = state.selected.has(it.id);
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML = `
+          <div class='row' style='justify-content:space-between'>
+            <div class='title'>${esc(it.name)}</div>
+            <span class='badge ${badgeClass(it.status)}'>${badgeText(it)}</span>
+          </div>
+          <div class='row' style='margin-top:8px;justify-content:space-between'>
+            <div class='muted'>${esc(it.meta || '')}</div>
+            <input type='checkbox' ${checked ? 'checked' : ''} />
+          </div>
+        `;
+        const cb = card.querySelector('input');
+        cb.addEventListener('change', () => {
+          if (cb.checked) state.selected.add(it.id); else state.selected.delete(it.id);
+          syncBtn();
+        });
+        list.appendChild(card);
+      }
+      syncBtn();
+    }
+
+    function syncBtn(){
+      const btn = document.getElementById('btn');
+      btn.disabled = state.selected.size === 0;
+      btn.textContent = state.selected.size ? `✅Отметить полив (${state.selected.size})` : '✅Отметить полив';
+    }
+
+    async function api(path, opts={}){
+      const headers = Object.assign({}, opts.headers || {}, {
+        'Content-Type': 'application/json',
+        'X-Telegram-InitData': initData,
+      });
+      const res = await fetch(path, Object.assign({}, opts, { headers }));
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.detail || 'Request failed');
+      return data;
+    }
+
+    async function load(){
+      try{
+        const data = await api('/api/today');
+        state.items = data.items || [];
+        state.selected = new Set();
+        document.getElementById('summary').textContent = data.summary || '';
+        render();
+      }catch(e){
+        document.getElementById('summary').textContent = 'Не получилось загрузить данные. Открой Mini App ещё раз.';
+      }
+    }
+
+    document.getElementById('btn').addEventListener('click', async () => {
+      const ids = Array.from(state.selected);
+      if (!ids.length) return;
+      try{
+        await api('/api/water', { method:'POST', body: JSON.stringify({ plant_ids: ids }) });
+        await load();
+        if (tg) tg.HapticFeedback?.notificationOccurred('success');
+      }catch(e){
+        if (tg) tg.showPopup?.({ title: 'Ошибка', message: 'Не получилось отметить полив. Попробуй ещё раз.' });
+      }
+    });
+
+    load();
+  </script>
+</body>
+</html>"""
+
+
+def _validate_webapp_init_data(init_data: str, max_age_sec: int = 300) -> dict:
+    """Validates Telegram WebApp initData. Returns parsed data dict (including 'user')."""
+    init_data = (init_data or "").strip()
+    if not init_data:
+        raise HTTPException(status_code=401, detail="Missing initData")
+
+    pairs = dict(parse_qsl(init_data, keep_blank_values=True))
+    received_hash = pairs.pop("hash", None)
+    if not received_hash:
+        raise HTTPException(status_code=401, detail="Missing hash")
+
+    check_string = "\n".join(f"{k}={pairs[k]}" for k in sorted(pairs.keys()))
+    secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode("utf-8"), hashlib.sha256).digest()
+    calc_hash = hmac.new(secret_key, check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(calc_hash, received_hash):
+        raise HTTPException(status_code=401, detail="Bad initData signature")
+
+    # anti-replay (auth_date)
+    auth_date = pairs.get("auth_date")
+    if auth_date and auth_date.isdigit():
+        try:
+            auth_ts = int(auth_date)
+            now_ts = int(datetime.now(tz=TZ).timestamp())
+            if now_ts - auth_ts > max_age_sec:
+                raise HTTPException(status_code=401, detail="initData expired")
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
+    # user is JSON inside the string
+    import json
+    user_raw = pairs.get("user")
+    if not user_raw:
+        raise HTTPException(status_code=401, detail="Missing user")
+    try:
+        user = json.loads(user_raw)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Bad user payload")
+    if not isinstance(user, dict) or "id" not in user:
+        raise HTTPException(status_code=401, detail="Bad user payload")
+
+    pairs["user"] = user
+    return pairs
+
+
+def _webapp_user_id(request: Request) -> int:
+    init_data = request.headers.get("X-Telegram-InitData", "")
+    parsed = _validate_webapp_init_data(init_data)
+    return int(parsed["user"]["id"])
+
+
+def _today_items_for_user(user_id: int):
+    rows = list_plants_full(user_id)
+    today = datetime.now(TZ).date()
+
+    items = []
+    cnt_due = cnt_over = cnt_unknown = 0
+    for pid, name, norm_days, last_watered_at in rows:
+        status = "ok"
+        overdue_by = 0
+        meta_parts = []
+
+        if norm_days:
+            meta_parts.append(f"норма {int(norm_days)}д")
+        else:
+            status = "unknown"
+            cnt_unknown += 1
+
+        days_since = None
+        if last_watered_at:
+            try:
+                days_since = (today - last_watered_at.astimezone(TZ).date()).days
+            except Exception:
+                try:
+                    days_since = (today - last_watered_at.date()).days
+                except Exception:
+                    days_since = None
+        if days_since is not None:
+            meta_parts.append(f"последний полив {int(days_since)}д назад")
+        else:
+            meta_parts.append("полив не отмечен")
+
+        if status != "unknown" and norm_days and last_watered_at:
+            due_date = last_watered_at.astimezone(TZ).date() + timedelta(days=int(norm_days))
+            if due_date < today:
+                status = "overdue"
+                overdue_by = (today - due_date).days
+                cnt_over += 1
+            elif due_date == today:
+                status = "due"
+                cnt_due += 1
+
+        items.append({
+            "id": int(pid),
+            "name": name,
+            "status": status,
+            "overdue_by": int(overdue_by),
+            "meta": " · ".join(meta_parts),
+        })
+
+    summary = f"Пора: {cnt_due} · Просрочено: {cnt_over} · Нужно настроить: {cnt_unknown}"
+    return summary, items
+
+
+api = FastAPI()
+
+
+@api.get("/app", response_class=HTMLResponse)
+async def webapp_page():
+    return HTMLResponse(WEBAPP_HTML)
+
+
+@api.get("/api/today")
+async def api_today(request: Request):
+    user_id = _webapp_user_id(request)
+    summary, items = _today_items_for_user(user_id)
+    return JSONResponse({"summary": summary, "items": items})
+
+
+@api.post("/api/water")
+async def api_water(request: Request):
+    user_id = _webapp_user_id(request)
+    payload = await request.json()
+    plant_ids = payload.get("plant_ids") if isinstance(payload, dict) else None
+    if not isinstance(plant_ids, list) or not all(isinstance(x, int) for x in plant_ids):
+        raise HTTPException(status_code=400, detail="plant_ids must be a list of ints")
+    log_water_many(user_id, plant_ids, datetime.now(TZ))
+    return JSONResponse({"ok": True})
+
+
+@api.post("/webhook")
+async def telegram_webhook(request: Request):
+    if not getattr(api.state, "tg_app", None):
+        raise HTTPException(status_code=503, detail="Bot not ready")
+    data = await request.json()
+    update = Update.de_json(data, api.state.tg_app.bot)
+    await api.state.tg_app.process_update(update)
+    return JSONResponse({"ok": True})
+
+
+def _build_tg_application() -> Application:
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -872,14 +1161,33 @@ def main():
     app.add_handler(CallbackQueryHandler(on_callback))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    return app
 
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        url_path="webhook",
-        webhook_url=f"{BASE_URL}/webhook",
-    )
+
+@api.on_event("startup")
+async def _on_startup():
+    init_db()
+    tg_app = _build_tg_application()
+    await tg_app.initialize()
+    await tg_app.start()
+    api.state.tg_app = tg_app
+
+    # Make sure Telegram knows our webhook URL (safe to call on each startup)
+    try:
+        await tg_app.bot.set_webhook(url=f"{BASE_URL}/webhook")
+    except Exception:
+        # Do not crash the service if webhook setting fails (e.g., temp network issue)
+        pass
+
+
+@api.on_event("shutdown")
+async def _on_shutdown():
+    tg_app = getattr(api.state, "tg_app", None)
+    if tg_app:
+        await tg_app.stop()
+        await tg_app.shutdown()
 
 
 if __name__ == "__main__":
-    main()
+    import uvicorn
+    uvicorn.run("bot:api", host="0.0.0.0", port=PORT, log_level="info")
