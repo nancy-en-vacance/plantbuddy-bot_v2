@@ -1,4 +1,3 @@
-
 # --- PlantBuddy unified ASGI app (FastAPI + Telegram webhook) ---
 import os
 import json
@@ -9,13 +8,14 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
+
 from telegram import (
     Update,
     ReplyKeyboardMarkup,
     KeyboardButton,
     WebAppInfo,
 )
-from telegram.ext import Application, ContextTypes
+from telegram.ext import Application, CommandHandler, ContextTypes
 
 import storage  # existing storage.py
 
@@ -49,12 +49,18 @@ def build_main_menu() -> ReplyKeyboardMarkup:
         ],
         resize_keyboard=True,
         is_persistent=True,
+        input_field_placeholder="Выбери действие…",
     )
 
 
-@tg_app.post_init
-async def _post_init(app_: Application):
-    await app_.bot.set_webhook(url=f"{BASE_URL}/webhook")
+async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # UX requirement: bold phrase in start message
+    text = "**Помню, когда поливать твои растения🌿**\n\nНажми кнопку снизу или напиши команду."
+    await update.message.reply_text(text, reply_markup=build_main_menu(), parse_mode="Markdown")
+
+
+# Register minimal handler(s). You can add the rest back later; this keeps the bot usable.
+tg_app.add_handler(CommandHandler("start", cmd_start))
 
 
 # ---------------- initData validation ----------------
@@ -67,6 +73,7 @@ def validate_init_data(init_data: str) -> dict:
     if not received_hash:
         raise HTTPException(status_code=401, detail="Missing hash")
 
+    # anti-replay
     auth_date = int(data.get("auth_date", "0"))
     now = int(datetime.now(tz=timezone.utc).timestamp())
     if now - auth_date > 60 * 10:
@@ -74,11 +81,7 @@ def validate_init_data(init_data: str) -> dict:
 
     secret_key = hashlib.sha256(BOT_TOKEN.encode()).digest()
     check_string = "\n".join(f"{k}={v}" for k, v in sorted(data.items()))
-    computed_hash = hmac.new(
-        secret_key,
-        check_string.encode(),
-        hashlib.sha256,
-    ).hexdigest()
+    computed_hash = hmac.new(secret_key, check_string.encode(), hashlib.sha256).hexdigest()
 
     if not hmac.compare_digest(computed_hash, received_hash):
         raise HTTPException(status_code=401, detail="Bad initData signature")
@@ -87,7 +90,7 @@ def validate_init_data(init_data: str) -> dict:
 
 
 def get_user_id_from_request(req: Request) -> int:
-    init_data = req.headers.get("X-Telegram-InitData")
+    init_data = req.headers.get("X-Telegram-InitData", "")
     data = validate_init_data(init_data)
     user = json.loads(data.get("user", "{}"))
     uid = user.get("id")
@@ -96,10 +99,30 @@ def get_user_id_from_request(req: Request) -> int:
     return int(uid)
 
 
+# ---------------- FastAPI lifecycle ----------------
+@app.on_event("startup")
+async def _startup():
+    # Initialize telegram application once and set webhook
+    await tg_app.initialize()
+    await tg_app.bot.set_webhook(url=f"{BASE_URL}/webhook")
+
+
+@app.on_event("shutdown")
+async def _shutdown():
+    # Graceful shutdown
+    try:
+        await tg_app.shutdown()
+    except Exception:
+        pass
+
+
 # ---------------- Web routes ----------------
 @app.get("/app")
 async def app_page():
-    html = Path("app.html").read_text(encoding="utf-8")
+    try:
+        html = Path("app.html").read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise HTTPException(status_code=500, detail="app.html not found in repo root")
     return HTMLResponse(html)
 
 
