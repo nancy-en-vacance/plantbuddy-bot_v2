@@ -800,7 +800,7 @@ async def _analyze_latest_photo(user_id: int, plant_id: int, context: ContextTyp
         "- Cause — probability (high / medium / low)\n"
         "Base probabilities on visible signs and provided watering context.\n\n"
         "4) Что сделать сейчас:\n"
-        "<b>Сегодня:\n"
+        "Сегодня:\n"
         "- Practical immediate steps.\n\n"
         "В ближайшую неделю:\n"
         "- Short-term care adjustments.\n\n"
