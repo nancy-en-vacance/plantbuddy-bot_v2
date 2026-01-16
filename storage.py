@@ -76,6 +76,21 @@ def list_plants(user_id: int) -> List[Tuple[int, str]]:
         return cur.fetchall()
 
 
+def list_plants_full(user_id: int) -> List[Tuple[int, str, Optional[int], Optional[datetime]]]:
+    """Активные растения со всем контекстом для UI (норма + последний полив)."""
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, name, water_every_days, last_watered_at
+            FROM plants
+            WHERE user_id=%s AND active=TRUE
+            ORDER BY id
+            """,
+            (user_id,),
+        )
+        return cur.fetchall()
+
+
 def list_plants_archived(user_id: int) -> List[Tuple[int, str]]:
     """Только архивные (active=FALSE)."""
     with get_conn() as conn, conn.cursor() as cur:
