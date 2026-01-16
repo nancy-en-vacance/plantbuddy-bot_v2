@@ -15,6 +15,7 @@ from telegram import (
     InlineKeyboardMarkup,
     ReplyKeyboardMarkup,
     KeyboardButton,
+    WebAppInfo,
 )
 from telegram.ext import (
     Application,
@@ -265,10 +266,12 @@ MENU_WATER = "💧Отметить полив"
 MENU_PHOTO = "💬Спросить про растение"
 MENU_PLANTS = "🪴Посмотреть все растения"
 MENU_NORMS = "💦Узнать частоту полива"
+MENU_APP = "🧾Открыть PlantBuddy"
 
 def build_main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
+            [KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app"))],
             [KeyboardButton(MENU_TODAY), KeyboardButton(MENU_WATER)],
             [KeyboardButton(MENU_PHOTO), KeyboardButton(MENU_PLANTS)],
             [KeyboardButton(MENU_NORMS)],
