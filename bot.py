@@ -1,6 +1,3 @@
-# bot.py (updated)
-
-```python
 # bot.py — Photo v1 (flow A): /photo -> choose plant -> send photo -> save tg file_id
 import os
 import html as _html
@@ -74,7 +71,7 @@ class UX:
     START = (
         "🌱<b>PlantBuddy</b>\n"
         "<b>Помню, когда поливать твои растения🌿</b>\n\n"
-        "Можно писать команды или нажимать кнопки снизу👇\n\n"
+        "Можно писать команды или жать кнопки снизу👇\n\n"
         "/add_plant — добавить растение\n"
         "/plants — список активных\n"
         "/rename_plant — переименовать\n"
@@ -85,7 +82,7 @@ class UX:
         "/archive — убрать в архив\n"
         "/archived — показать архив\n"
         "/restore — вернуть из архива\n"
-        "/photo — узнать о состоянии растения\n"
+        "/photo — спросить про растение\n"
         "/cancel — отменить действие"
     )
 
@@ -106,7 +103,7 @@ class UX:
         "Напиши название растения.\n\n"
         "Если передумала — /cancel"
     )
-    ADD_DONE = "<b>Готово 🌱</b>\n\nРастение добавила."
+    ADD_DONE = "<b>Готово🌱</b>\n\nРастение добавила."
     ADD_EMPTY = "<b>Хм, пусто🤔</b>\n\nНапиши название растения.\n\nЕсли передумала — /cancel"
 
     @staticmethod
@@ -126,7 +123,7 @@ class UX:
         "Если передумала — /cancel"
     )
     RENAME_NO_SUCH = "<b>Хм, такого номера нет🤔</b>\n\nПроверь список выше."
-    RENAME_DONE = "<b>Готово 🌱</b>\n\nРастение переименовала."
+    RENAME_DONE = "<b>Готово🌱</b>\n\nРастение переименовала."
     RENAME_FAIL = "<b>Не получилось🤔</b>\n\nВозможно, такое имя уже есть."
 
     @staticmethod
@@ -150,7 +147,7 @@ class UX:
 
     @staticmethod
     def norms(rows) -> str:
-        lines = ["<b>Нормы полива💧</b>\n", "<i>"]
+        lines = ["<b>Нормы полива 💧</b>\n", "<i>"]
         for name, days in rows:
             lines.append(f"{UX._esc(name)} — раз в {int(days)} дн.")
         lines.append("</i>")
@@ -169,14 +166,14 @@ class UX:
             lines.append("</i>\n")
 
         if overdue:
-            lines.append("🧡<b>Просрочено:</b>")
+            lines.append("🧡 <b>Просрочено:</b>")
             lines.append("<i>")
             for name, days in overdue:
                 lines.append(f"• {UX._esc(name)} — {int(days)} дн.")
             lines.append("</i>\n")
 
         if unknown:
-            lines.append("ℹ️<b>Нужно настроить:</b>")
+            lines.append("ℹ️ <b>Нужно настроить:</b>")
             lines.append("<i>")
             for name in unknown:
                 lines.append(f"• {UX._esc(name)}")
@@ -192,7 +189,7 @@ class UX:
         return "\n".join(lines).strip()
 
     WATER_DONE = "<b>Готово 💧</b>\n\nПолив отметила."
-    WATER_BAD = "<b>Не поняла номера🤔</b>\n\nПопробуй так: <i>1,3</i>"
+    WATER_BAD = "<b>Не поняла номера 🤔</b>\n\nПопробуй так: <i>1,3</i>"
 
     @staticmethod
     def archive_prompt(rows) -> str:
@@ -228,25 +225,25 @@ class UX:
             "Если передумала — /cancel"
         )
 
-    RESTORE_BAD = "<b>Хм, я не поняла🤔</b>\n\nПопробуй так:\n<i>1</i>"
-    RESTORE_DONE = "<b>Готово🌱</b>\n\nРастение снова активное."
+    RESTORE_BAD = "<b>Хм, я не поняла 🤔</b>\n\nПопробуй так:\n<i>1</i>"
+    RESTORE_DONE = "<b>Готово 🌱</b>\n\nРастение снова активное."
 
     # --- water inline polish ---
     @staticmethod
     def water_screen(selected_count: int, selected_preview: str = "") -> str:
         if selected_count == 0:
-            return "<b>Какие растения полила?💧</b>\n\nВыбери из списка ниже👇"
+            return "<b>Какие растения полила? 💧</b>\n\nВыбери из списка ниже👇"
         preview = f" — <i>{UX._esc(selected_preview)}</i>" if selected_preview else ""
-        return f"<b>Выбрано: {selected_count}</b>{preview}\n\nВыбери ещё или нажми «Готово» ✅"
+        return f"<b>Выбрано: {selected_count}</b>{preview}\n\nВыбери ещё или нажми «Готово»✅"
 
     # --- photo flow ---
     PHOTO_CHOOSE = "<b>К какому растению это фото? 📸</b>\n\nВыбери из списка ниже👇"
     PHOTO_SEND = "<b>Ок👌</b>\n\nТеперь пришли фото этого растения 📸\n\nЕсли передумала — /cancel"
     PHOTO_SAVED = "<b>Приняла 📸</b>\n\nФото сохранила."
-    PHOTO_ANALYZE_OFFER = "Получить рекомендацию по растению🧠"
-    ANALYZE_WORKING = "<b>Смотрю фото🧠</b>\n\nМинутку, я рядом."
-    ANALYZE_NO_PHOTO = "<b>У меня нет фото для анализа🤔</b>\n\nСначала пришли фото через /photo."
-    ANALYZE_NO_KEY = "<b>Нужен ключ OpenAI🤔</b>\n\nДобавь переменную окружения <i>OPENAI_API_KEY</i> на Render."
+    PHOTO_ANALYZE_OFFER = "Хочешь — могу аккуратно прикинуть, что с растением?🧐"
+    ANALYZE_WORKING = "<b>Смотрю фото👀</b>\n\nМинутку, я рядом."
+    ANALYZE_NO_PHOTO = "<b>У меня нет фото для анализа 🤔</b>\n\nСначала пришли фото через /photo."
+    ANALYZE_NO_KEY = "<b>Нужен ключ OpenAI 🤔</b>\n\nДобавь переменную окружения <i>OPENAI_API_KEY</i> на Render."
     ANALYZE_ERROR = "<b>Упс🤔</b>\n\nНе получилось проанализировать фото. Попробуй ещё раз чуть позже."
     PHOTO_EXPECTED = "<b>Жду фото 📸</b>\n\nПришли фото растения.\n\nЕсли передумала — /cancel"
 
@@ -254,11 +251,11 @@ class UX:
 # =========================
 # Main menu (ReplyKeyboard)
 # =========================
-MENU_TODAY = "🌿Сегодня"
-MENU_WATER = "💧Полила"
-MENU_PHOTO = "🌸Спросить про растение"
-MENU_PLANTS = "🪴Растения"
-MENU_NORMS = "📏Нормы"
+MENU_TODAY = "🌿План на сегодня"
+MENU_WATER = "💧Отметить полив"
+MENU_PHOTO = "💬Спросить про растение"
+MENU_PLANTS = "🪴Посмотреть все растения"
+MENU_NORMS = "📏Узнать частоту полива"
 
 def build_main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
@@ -315,7 +312,7 @@ def build_water_keyboard(rows: List[Tuple[int, str]], selected: Set[int]) -> Inl
     grid: List[List[InlineKeyboardButton]] = []
     row_buf: List[InlineKeyboardButton] = []
     for pid, name in rows:
-        label = f"{'✅' if pid in selected else ''}{name}"
+        label = f"{'✅ ' if pid in selected else ''}{name}"
         btn = InlineKeyboardButton(label, callback_data=f"{CB_W_TOGGLE}:{pid}")
         row_buf.append(btn)
         if len(row_buf) == 2:
@@ -416,7 +413,7 @@ async def cmd_norms(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     res = compute_today(update.effective_user.id, date.today())
     text = UX.today(res)
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("💧Отметить полив", callback_data="go:water")]])
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("💧 Отметить полив", callback_data="go:water")]])
     await update.message.reply_text(text, parse_mode=UX.PARSE_MODE, reply_markup=keyboard)
     # keep main menu visible
     await update.message.reply_text("Выбери следующее действие👇", reply_markup=build_main_menu())
@@ -886,5 +883,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-```
