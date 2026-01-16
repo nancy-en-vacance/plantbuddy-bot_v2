@@ -36,15 +36,13 @@ OUTPUT LANGUAGE:
 
 RESPONSE FORMAT (use exactly this structure):
 
-🧠 Анализ фото: {plant_name}
-
-1) Краткий вывод (1–2 предложения)
+1) Краткий вывод:
 Give a general, non-diagnostic summary of the plant’s current condition.
 
-2) Что видно на фото (только факты):
+2) Что видно на фото:
 - Bullet points describing only what is directly visible in the image.
 
-3) Возможные причины (гипотезы, не более 3):
+3) Возможные причины:
 - Cause — probability (high / medium / low)
 Base probabilities on visible signs and provided watering context.
 
@@ -57,9 +55,6 @@ Base probabilities on visible signs and provided watering context.
 
 Не делать:
 - Actions that could worsen the situation.
-
-5) Если нужно уточнить:
-- What additional photos or information would help improve confidence.
 
 ---
 
