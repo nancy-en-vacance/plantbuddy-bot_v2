@@ -1,5 +1,4 @@
 # --- PlantBuddy unified ASGI app (FastAPI + Telegram webhook) ---
-from pathlib import Path
 import os
 import json
 import hmac
@@ -43,7 +42,7 @@ MENU_APP = "🧾Открыть PlantBuddy"
 def build_main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            [KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app"))],
+            [KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=3"))],
             [KeyboardButton(MENU_TODAY), KeyboardButton(MENU_WATER)],
             [KeyboardButton(MENU_PHOTO), KeyboardButton(MENU_PLANTS)],
             [KeyboardButton(MENU_NORMS)],
@@ -117,6 +116,10 @@ async def _shutdown():
         pass
 
 
+@app.get("/")
+async def root():
+    return {"ok": True}
+
 # ---------------- Web routes ----------------
 @app.get("/app")
 async def app_page():
@@ -124,7 +127,11 @@ async def app_page():
         html = Path("app.html").read_text(encoding="utf-8")
     except FileNotFoundError:
         raise HTTPException(status_code=500, detail="app.html not found in repo root")
-    return HTMLResponse(html)
+    resp = HTMLResponse(html)
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 
 @app.get("/api/today")
