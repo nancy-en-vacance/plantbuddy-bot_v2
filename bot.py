@@ -71,7 +71,7 @@ BASE_URL = os.getenv("BASE_URL")
 # Inline WebApp opener (hard-reset friendly)
 def build_open_inline() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=20"))]]
+        [[InlineKeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=21"))]]
     )
 
 if not BOT_TOKEN or not BASE_URL:
@@ -91,7 +91,7 @@ MENU_APP = "🧾Открыть PlantBuddy"
 def build_main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            [KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=20"))],
+            [KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=21"))],
             [KeyboardButton(MENU_TODAY), KeyboardButton(MENU_WATER)],
             [KeyboardButton(MENU_PHOTO), KeyboardButton(MENU_PLANTS)],
             [KeyboardButton(MENU_NORMS)],
@@ -103,14 +103,14 @@ def build_main_menu() -> ReplyKeyboardMarkup:
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = "**Помню, когда поливать твои растения🌿**\n\nОткрой приложение или выбери действие в меню ниже."
+    text = "**Помню, когда поливать твои растения🌿**\n\nОткрой приложение кнопкой ниже."
     if update.message:
+        # Hard reset: убираем reply-клавиатуру (она кешируется) и даём WebApp через inline-кнопку.
+        await update.message.reply_text("Обновляю интерфейс…", reply_markup=ReplyKeyboardRemove())
         await update.message.reply_text(text, reply_markup=build_open_inline(), parse_mode="Markdown")
-        await update.message.reply_text("Меню:", reply_markup=build_bot_menu())
 
 tg_app.add_handler(CommandHandler("start", cmd_start))
-    tg_app.add_handler(MessageHandler(filters.Regex(f"^{MENU_APP}$"), cmd_open))
-    tg_app.add_handler(MessageHandler(filters.Regex(f"^{MENU_PHOTO}$"), cmd_photo))
+    tg_app.add_handler(CommandHandler("photo", cmd_photo))
     tg_app.add_handler(MessageHandler(filters.PHOTO, handle_plant_photo))
 
 async def cmd_open(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -160,7 +160,7 @@ async def _startup():
         await tg_app.bot.set_chat_menu_button(
             menu_button=MenuButtonWebApp(
                 text="🧾Открыть PlantBuddy",
-                web_app=WebAppInfo(url=f"{BASE_URL}/app?v=20")
+                web_app=WebAppInfo(url=f"{BASE_URL}/app?v=21")
             )
         )
     except Exception:
@@ -175,7 +175,7 @@ async def _shutdown():
         pass
 
 
-APP_VERSION = "mvp-v20-orderfix"
+APP_VERSION = "mvp-v21-photo-cmd"
 
 @app.get("/debug/version")
 async def debug_version():
@@ -297,3 +297,73 @@ async def telegram_webhook(req: Request):
     update = Update.de_json(data, tg_app.bot)
     await tg_app.process_update(update)
     return {"ok": True}
+
+
+
+# ---------------- Photo analysis (bot MVP, via /photo) ----------------
+async def cmd_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["awaiting_photo"] = True
+    await update.message.reply_text(
+        "Пришли фото растения — я посмотрю и подскажу🌿\n"
+        "Дисклеймер: это не диагноз, а помощь по уходу."
+    )
+
+def _load_prompt_text() -> str:
+    try:
+        p = Path(__file__).resolve().parent / "prompt.txt"
+        if p.exists():
+            return p.read_text(encoding="utf-8")
+    except Exception:
+        pass
+    return "You are a plant care assistant. Provide calm, practical plant care advice."
+
+async def _analyze_photo_openai(image_bytes: bytes) -> str:
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        return "Анализ по фото не настроен: добавь OPENAI_API_KEY в переменные окружения Render."
+
+    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
+    prompt = _load_prompt_text()
+
+    data_url = "data:image/jpeg;base64," + base64.b64encode(image_bytes).decode("utf-8")
+
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
+        resp = client.responses.create(
+            model=model,
+            input=[{
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": prompt},
+                    {"type": "input_image", "image_url": data_url},
+                ],
+            }],
+        )
+        out_text = getattr(resp, "output_text", None)
+        if out_text:
+            return out_text.strip()
+
+        chunks = []
+        for item in getattr(resp, "output", []) or []:
+            for c in getattr(item, "content", []) or []:
+                if getattr(c, "type", "") in ("output_text", "text"):
+                    chunks.append(getattr(c, "text", ""))
+        joined = "\n".join([x for x in chunks if x]).strip()
+        return joined or "Не получилось получить ответ от модели."
+    except Exception as e:
+        return f"Ошибка анализа по фото: {type(e).__name__}"
+
+async def handle_plant_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("awaiting_photo"):
+        return
+    context.user_data["awaiting_photo"] = False
+
+    try:
+        photo = update.message.photo[-1]
+        tg_file = await photo.get_file()
+        image_bytes = await tg_file.download_as_bytearray()
+        answer = await _analyze_photo_openai(bytes(image_bytes))
+        await update.message.reply_text(answer)
+    except Exception as e:
+        await update.message.reply_text(f"Не смогла обработать фото: {type(e).__name__}")
