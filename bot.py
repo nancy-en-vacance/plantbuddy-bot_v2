@@ -56,6 +56,7 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.encoders import jsonable_encoder
 
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, WebAppInfo, InlineKeyboardMarkup, InlineKeyboardButton, MenuButtonWebApp
 from telegram.ext import Application, CommandHandler, ContextTypes
@@ -69,7 +70,7 @@ BASE_URL = os.getenv("BASE_URL")
 # Inline WebApp opener (hard-reset friendly)
 def build_open_inline() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=13"))]]
+        [[InlineKeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=14"))]]
     )
 
 if not BOT_TOKEN or not BASE_URL:
@@ -89,7 +90,7 @@ MENU_APP = "🧾Открыть PlantBuddy"
 def build_main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            [KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=13"))],
+            [KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=14"))],
             [KeyboardButton(MENU_TODAY), KeyboardButton(MENU_WATER)],
             [KeyboardButton(MENU_PHOTO), KeyboardButton(MENU_PLANTS)],
             [KeyboardButton(MENU_NORMS)],
@@ -156,7 +157,7 @@ async def _startup():
         await tg_app.bot.set_chat_menu_button(
             menu_button=MenuButtonWebApp(
                 text="🧾Открыть PlantBuddy",
-                web_app=WebAppInfo(url=f"{BASE_URL}/app?v=13")
+                web_app=WebAppInfo(url=f"{BASE_URL}/app?v=14")
             )
         )
     except Exception:
@@ -171,7 +172,7 @@ async def _shutdown():
         pass
 
 
-APP_VERSION = "debug-v13-jsonhelper"
+APP_VERSION = "debug-v14-jsonable-encoder"
 
 @app.get("/debug/version")
 async def debug_version():
@@ -204,7 +205,7 @@ async def api_ping():
 async def api_today(request: Request):
     user_id = get_user_id_from_request(request)
     items = storage.list_plants_full(user_id)
-    return JSONResponse({"items": _jsonable_obj(items)})
+    return JSONResponse(content=jsonable_encoder({"items": items}))
 
 
 @app.post("/api/water")
