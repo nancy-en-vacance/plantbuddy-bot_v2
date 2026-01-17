@@ -1,3 +1,48 @@
+
+def verify_telegram_init_data(init_data: str, bot_token: str) -> dict:
+    """
+    Verifies Telegram WebApp initData signature.
+
+    Telegram algorithm:
+    - Parse initData querystring to key/value pairs
+    - Take 'hash' (hex) and exclude it from the check string
+    - data_check_string = "\n".join("key=value" for keys sorted lexicographically)
+    - secret_key = sha256(bot_token)
+    - computed_hash = hmac_sha256(secret_key, data_check_string).hexdigest()
+    """
+    if not init_data:
+        raise ValueError("Missing initData")
+
+    pairs = parse_qsl(init_data, keep_blank_values=True, strict_parsing=False)
+    data = {k: v for k, v in pairs}
+
+    received_hash = data.get("hash")
+    if not received_hash:
+        raise ValueError("Missing hash")
+
+    data.pop("hash", None)
+
+    data_check_string = "\n".join(f"{k}={data[k]}" for k in sorted(data.keys()))
+
+    secret_key = hashlib.sha256(bot_token.encode("utf-8")).digest()
+    computed_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    if not hmac.compare_digest(computed_hash, received_hash):
+        raise ValueError("Bad initData signature")
+
+    return data
+
+
+def extract_user_id_from_init_data(data: dict) -> int:
+    if "user" in data:
+        user_obj = json.loads(data["user"])
+        if isinstance(user_obj, dict) and "id" in user_obj:
+            return int(user_obj["id"])
+    if "user_id" in data:
+        return int(data["user_id"])
+    raise ValueError("No user id in initData")
+
+
 # --- PlantBuddy unified ASGI app (FastAPI + Telegram webhook) ---
 import os
 import json
@@ -35,7 +80,7 @@ MENU_APP = "🧾Открыть PlantBuddy"
 def build_main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            [KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=7"))],
+            [KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=8"))],
             [KeyboardButton(MENU_TODAY), KeyboardButton(MENU_WATER)],
             [KeyboardButton(MENU_PHOTO), KeyboardButton(MENU_PLANTS)],
             [KeyboardButton(MENU_NORMS)],
@@ -69,7 +114,7 @@ async def cmd_reset_kb(update: Update, context: ContextTypes.DEFAULT_TYPE):
 tg_app.add_handler(CommandHandler("reset_kb", cmd_reset_kb))
 
 
-def validate_init_data(init_data: str) -> dict:
+def verify_telegram_init_data(init_data: str) -> dict:
     if not init_data:
         raise HTTPException(status_code=401, detail="Missing initData")
 
@@ -97,7 +142,7 @@ def get_user_id_from_request(req: Request) -> int:
     init_data = req.headers.get("X-Telegram-InitData", "")
     print(f"X-Telegram-InitData len={len(init_data)}", flush=True)
 
-    data = validate_init_data(init_data)
+    data = verify_telegram_init_data(init_data)
     user = json.loads(data.get("user", "{}"))
     uid = user.get("id")
     if not uid:
@@ -114,7 +159,7 @@ async def _startup():
         await tg_app.bot.set_chat_menu_button(
             menu_button=MenuButtonWebApp(
                 text="🧾Открыть PlantBuddy",
-                web_app=WebAppInfo(url=f"{BASE_URL}/app?v=7")
+                web_app=WebAppInfo(url=f"{BASE_URL}/app?v=8")
             )
         )
     except Exception:
@@ -129,7 +174,7 @@ async def _shutdown():
         pass
 
 
-APP_VERSION = "debug-v7-hardreset"
+APP_VERSION = "debug-v8-sigfix"
 
 @app.get("/debug/version")
 async def debug_version():
