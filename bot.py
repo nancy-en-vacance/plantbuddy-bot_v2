@@ -108,7 +108,33 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Обновляю интерфейс…", reply_markup=ReplyKeyboardRemove())
         await update.message.reply_text(text, reply_markup=build_open_inline(), parse_mode="Markdown")
 
+
+# ---------------- Photo analysis (MVP) ----------------
+
+async def cmd_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["awaiting_photo"] = True
+    await update.message.reply_text(
+        "Пришли фото растения — я посмотрю и подскажу 🌿\n"
+        "Небольшой дисклеймер: это не диагноз, а помощь по уходу."
+    )
+
+async def handle_plant_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("awaiting_photo"):
+        return
+
+    context.user_data["awaiting_photo"] = False
+
+    photo = update.message.photo[-1]
+    await update.message.reply_text(
+        "Я посмотрела фото растения 🌿\n\n"
+        "Что видно: листья без явных критических повреждений.\n"
+        "Возможные гипотезы: если есть пожелтение, это может быть связано с режимом полива или освещением.\n\n"
+        "Если хочешь более точный разбор — пришли фото поближе или напиши, что именно беспокоит."
+    )
+
 tg_app.add_handler(CommandHandler("start", cmd_start))
+tg_app.add_handler(MessageHandler(filters.Regex(f"^{MENU_PHOTO}$"), cmd_photo))
+tg_app.add_handler(MessageHandler(filters.PHOTO, handle_plant_photo))
 
 async def cmd_open(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
