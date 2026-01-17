@@ -63,6 +63,13 @@ import storage  # existing storage.py
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 BASE_URL = os.getenv("BASE_URL")
 
+
+# Inline WebApp opener (hard-reset friendly)
+def build_open_inline() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=9"))]]
+    )
+
 if not BOT_TOKEN or not BASE_URL:
     raise RuntimeError("BOT_TOKEN and BASE_URL must be set")
 
@@ -80,7 +87,7 @@ MENU_APP = "🧾Открыть PlantBuddy"
 def build_main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            [KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=8"))],
+            [KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=9"))],
             [KeyboardButton(MENU_TODAY), KeyboardButton(MENU_WATER)],
             [KeyboardButton(MENU_PHOTO), KeyboardButton(MENU_PLANTS)],
             [KeyboardButton(MENU_NORMS)],
@@ -159,7 +166,7 @@ async def _startup():
         await tg_app.bot.set_chat_menu_button(
             menu_button=MenuButtonWebApp(
                 text="🧾Открыть PlantBuddy",
-                web_app=WebAppInfo(url=f"{BASE_URL}/app?v=8")
+                web_app=WebAppInfo(url=f"{BASE_URL}/app?v=9")
             )
         )
     except Exception:
@@ -174,7 +181,7 @@ async def _shutdown():
         pass
 
 
-APP_VERSION = "debug-v8-sigfix"
+APP_VERSION = "debug-v9-openfix"
 
 @app.get("/debug/version")
 async def debug_version():
