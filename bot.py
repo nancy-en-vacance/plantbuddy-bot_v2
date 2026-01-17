@@ -69,7 +69,7 @@ BASE_URL = os.getenv("BASE_URL")
 # Inline WebApp opener (hard-reset friendly)
 def build_open_inline() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=10"))]]
+        [[InlineKeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=11"))]]
     )
 
 if not BOT_TOKEN or not BASE_URL:
@@ -89,7 +89,7 @@ MENU_APP = "🧾Открыть PlantBuddy"
 def build_main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            [KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=10"))],
+            [KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=11"))],
             [KeyboardButton(MENU_TODAY), KeyboardButton(MENU_WATER)],
             [KeyboardButton(MENU_PHOTO), KeyboardButton(MENU_PLANTS)],
             [KeyboardButton(MENU_NORMS)],
@@ -123,40 +123,28 @@ async def cmd_reset_kb(update: Update, context: ContextTypes.DEFAULT_TYPE):
 tg_app.add_handler(CommandHandler("reset_kb", cmd_reset_kb))
 
 
-def verify_telegram_init_data(init_data: str) -> dict:
-    if not init_data:
-        raise HTTPException(status_code=401, detail="Missing initData")
-
-    data = dict(parse_qsl(init_data, strict_parsing=True))
-    received_hash = data.pop("hash", None)
-    if not received_hash:
-        raise HTTPException(status_code=401, detail="Missing hash")
-
-    auth_date = int(data.get("auth_date", "0"))
-    now = int(datetime.now(tz=timezone.utc).timestamp())
-    if now - auth_date > 60 * 10:
-        raise HTTPException(status_code=401, detail="initData expired")
-
-    secret_key = hashlib.sha256(BOT_TOKEN.encode()).digest()
-    check_string = "\n".join(f"{k}={v}" for k, v in sorted(data.items()))
-    computed_hash = hmac.new(secret_key, check_string.encode(), hashlib.sha256).hexdigest()
-
-    if not hmac.compare_digest(computed_hash, received_hash):
-        raise HTTPException(status_code=401, detail="Bad initData signature")
-
-    return data
-
 
 def get_user_id_from_request(req: Request) -> int:
     init_data = req.headers.get("X-Telegram-InitData", "")
     print(f"X-Telegram-InitData len={len(init_data)}", flush=True)
 
-    data = verify_telegram_init_data(init_data)
-    user = json.loads(data.get("user", "{}"))
-    uid = user.get("id")
-    if not uid:
-        raise HTTPException(status_code=401, detail="No user id")
-    return int(uid)
+    try:
+        data = verify_telegram_init_data(init_data, BOT_TOKEN)
+    except ValueError as e:
+        # Do not leak initData; keep details minimal
+        raise HTTPException(status_code=401, detail=str(e))
+
+    # Optional: expiry check (10 min)
+    try:
+        auth_date = int(data.get("auth_date", "0"))
+        now = int(datetime.now(tz=timezone.utc).timestamp())
+        if auth_date and (now - auth_date > 60 * 10):
+            raise HTTPException(status_code=401, detail="initData expired")
+    except Exception:
+        pass
+
+    user_id = extract_user_id_from_init_data(data)
+    return int(user_id)
 
 
 @app.on_event("startup")
@@ -168,7 +156,7 @@ async def _startup():
         await tg_app.bot.set_chat_menu_button(
             menu_button=MenuButtonWebApp(
                 text="🧾Открыть PlantBuddy",
-                web_app=WebAppInfo(url=f"{BASE_URL}/app?v=10")
+                web_app=WebAppInfo(url=f"{BASE_URL}/app?v=11")
             )
         )
     except Exception:
@@ -183,7 +171,7 @@ async def _shutdown():
         pass
 
 
-APP_VERSION = "debug-v10-webapp-hmac"
+APP_VERSION = "debug-v11-dedup-auth"
 
 @app.get("/debug/version")
 async def debug_version():
