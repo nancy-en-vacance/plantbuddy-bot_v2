@@ -203,58 +203,67 @@ async def api_ping():
 
 @app.get("/api/today")
 async def api_today(request: Request):
+    """Return today's plant cards for the Mini App.
+
+    NOTE: storage.py in this repo returns tuples for list_plants();
+    here we query the DB directly to get (id, name, norm, last) in one go.
+    """
     user_id = get_user_id_from_request(request)
-    plants = storage.list_plants_full(user_id)
 
-    now = datetime.utcnow()
-    items = []
-    for p in plants:
-        pid = p.get("id")
-        name = p.get("name")
-        norm = p.get("watering_norm_days")
-        last = p.get("last_watered_at")
+    now = datetime.now(timezone.utc)
+    items: list[dict] = []
 
+    with storage.get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, name, water_every_days, last_watered_at
+                FROM plants
+                WHERE user_id = %s AND active = TRUE
+                ORDER BY id
+                """,
+                (user_id,),
+            )
+            rows = cur.fetchall() or []
+
+    for pid, name, norm, last in rows:
+        # last_watered_at comes as datetime (usually tz-aware) or None
+        last_iso = None
         days_since = None
-        if last:
-            try:
-                if isinstance(last, str):
-                    last = last.replace("Z", "+00:00")
-                    last = datetime.fromisoformat(last)
-                if isinstance(last, datetime) and last.tzinfo is None:
-                    last = last.replace(tzinfo=timezone.utc)
-                if isinstance(last, datetime):
-                    days_since = (now - last).days
-            except Exception:
-                days_since = None
+        if isinstance(last, datetime):
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            last_iso = last.astimezone(timezone.utc).isoformat()
+            days_since = (now - last).days
 
-        # status logic:
-        # - no norm => unknown
-        # - never watered but norm exists => due
-        # - watered => compare days_since vs norm
-        status = "ok"
+        status = "unknown"
         due_in = None
-        if norm is None:
-            status = "unknown"
-        elif days_since is None:
-            status = "due"
-            due_in = 0
-        else:
-            due_in = int(norm) - int(days_since)
-            if due_in < 0:
-                status = "overdue"
-            elif due_in == 0:
-                status = "due"
-            else:
-                status = "ok"
 
-        items.append({
-            "id": pid,
-            "name": name,
-            "norm_days": norm,
-            "days_since_last_watering": days_since,
-            "due_in_days": due_in,
-            "status": status,
-        })
+        if norm is not None:
+            # if never watered but norm exists -> due now
+            if days_since is None:
+                status = "due"
+                due_in = 0
+            else:
+                due_in = int(norm) - int(days_since)
+                if due_in < 0:
+                    status = "overdue"
+                elif due_in == 0:
+                    status = "due"
+                else:
+                    status = "ok"
+
+        items.append(
+            {
+                "id": int(pid),
+                "name": str(name),
+                "norm_days": int(norm) if norm is not None else None,
+                "last_watered_at": last_iso,
+                "days_since_last_watering": int(days_since) if days_since is not None else None,
+                "due_in_days": int(due_in) if due_in is not None else None,
+                "status": status,
+            }
+        )
 
     return JSONResponse(content={"items": items})
 
@@ -264,9 +273,19 @@ async def api_water(request: Request):
     user_id = get_user_id_from_request(request)
     payload = await request.json()
     plant_ids = payload.get("plant_ids", [])
+    if not isinstance(plant_ids, list):
+        raise HTTPException(status_code=400, detail="plant_ids must be a list")
+
+    now = datetime.now(timezone.utc)
+    updates: Dict[int, datetime] = {}
     for pid in plant_ids:
-        storage.mark_watered(user_id, pid)
-    return JSONResponse({"ok": True})
+        try:
+            updates[int(pid)] = now
+        except Exception:
+            continue
+
+    updated = storage.set_last_watered_bulk(user_id, updates) if updates else 0
+    return JSONResponse({"ok": True, "updated": updated})
 
 
 @app.post("/webhook")
