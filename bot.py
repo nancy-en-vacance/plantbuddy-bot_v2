@@ -69,7 +69,7 @@ BASE_URL = os.getenv("BASE_URL")
 # Inline WebApp opener (hard-reset friendly)
 def build_open_inline() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=11"))]]
+        [[InlineKeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=12"))]]
     )
 
 if not BOT_TOKEN or not BASE_URL:
@@ -89,7 +89,7 @@ MENU_APP = "🧾Открыть PlantBuddy"
 def build_main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            [KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=11"))],
+            [KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=12"))],
             [KeyboardButton(MENU_TODAY), KeyboardButton(MENU_WATER)],
             [KeyboardButton(MENU_PHOTO), KeyboardButton(MENU_PLANTS)],
             [KeyboardButton(MENU_NORMS)],
@@ -156,7 +156,7 @@ async def _startup():
         await tg_app.bot.set_chat_menu_button(
             menu_button=MenuButtonWebApp(
                 text="🧾Открыть PlantBuddy",
-                web_app=WebAppInfo(url=f"{BASE_URL}/app?v=11")
+                web_app=WebAppInfo(url=f"{BASE_URL}/app?v=12")
             )
         )
     except Exception:
@@ -171,7 +171,7 @@ async def _shutdown():
         pass
 
 
-APP_VERSION = "debug-v11-dedup-auth"
+APP_VERSION = "debug-v12-jsonfix"
 
 @app.get("/debug/version")
 async def debug_version():
@@ -204,7 +204,7 @@ async def api_ping():
 async def api_today(request: Request):
     user_id = get_user_id_from_request(request)
     items = storage.list_plants_full(user_id)
-    return JSONResponse({"items": items})
+    return JSONResponse({"items": _jsonable_obj(items)})
 
 
 @app.post("/api/water")
