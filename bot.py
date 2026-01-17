@@ -70,7 +70,7 @@ BASE_URL = os.getenv("BASE_URL")
 # Inline WebApp opener (hard-reset friendly)
 def build_open_inline() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=18"))]]
+        [[InlineKeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=19"))]]
     )
 
 if not BOT_TOKEN or not BASE_URL:
@@ -181,7 +181,7 @@ async def handle_plant_photo(update: Update, context: ContextTypes.DEFAULT_TYPE)
 def build_main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            [KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=18"))],
+            [KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=19"))],
             [KeyboardButton(MENU_TODAY), KeyboardButton(MENU_WATER)],
             [KeyboardButton(MENU_PHOTO), KeyboardButton(MENU_PLANTS)],
             [KeyboardButton(MENU_NORMS)],
@@ -251,7 +251,7 @@ async def _startup():
         await tg_app.bot.set_chat_menu_button(
             menu_button=MenuButtonWebApp(
                 text="🧾Открыть PlantBuddy",
-                web_app=WebAppInfo(url=f"{BASE_URL}/app?v=18")
+                web_app=WebAppInfo(url=f"{BASE_URL}/app?v=19")
             )
         )
     except Exception:
@@ -266,7 +266,7 @@ async def _shutdown():
         pass
 
 
-APP_VERSION = "mvp-v18-photo"
+APP_VERSION = "mvp-v19-photo-open"
 
 @app.get("/debug/version")
 async def debug_version():
