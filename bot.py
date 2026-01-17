@@ -59,7 +59,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.encoders import jsonable_encoder
 
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, WebAppInfo, InlineKeyboardMarkup, InlineKeyboardButton, MenuButtonWebApp
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 import storage  # existing storage.py
 
@@ -86,6 +86,97 @@ MENU_PLANTS = "🪴Посмотреть все растения"
 MENU_NORMS = "💦Узнать частоту полива"
 MENU_APP = "🧾Открыть PlantBuddy"
 
+# ---------------- Bot UI (reply keyboard) ----------------
+def build_bot_menu() -> ReplyKeyboardMarkup:
+    # Важно: Mini App открываем НЕ web_app-кнопкой в reply keyboard (Telegram кеширует).
+    # Вместо этого: текстовая кнопка -> бот присылает inline WebApp кнопку (cmd_open).
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton(MENU_APP)],
+            [KeyboardButton(MENU_PHOTO)],
+        ],
+        resize_keyboard=True,
+        is_persistent=True,
+        input_field_placeholder="Выбери действие…",
+    )
+
+# ---------------- Photo analysis (MVP) ----------------
+async def cmd_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["awaiting_photo"] = True
+    await update.message.reply_text(
+        "Пришли фото растения — я посмотрю и подскажу🌿\n"
+        "Небольшой дисклеймер: это не диагноз, а помощь по уходу."
+    )
+
+def _load_prompt() -> str:
+    try:
+        here = Path(__file__).resolve().parent
+        p = (here / "prompt.txt")
+        if p.exists():
+            return p.read_text(encoding="utf-8")
+    except Exception:
+        pass
+    return "You are a plant care assistant. Provide calm, practical plant care advice."
+
+async def _analyze_with_openai(image_bytes: bytes) -> str:
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        return "Сейчас анализ по фото не настроен: не найден OPENAI_API_KEY в переменных окружения."
+
+    prompt = _load_prompt()
+    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
+
+    b64 = base64.b64encode(image_bytes).decode("utf-8")
+    data_url = f"data:image/jpeg;base64,{b64}"
+
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
+
+        # Responses API (newer SDKs)
+        resp = client.responses.create(
+            model=model,
+            input=[{
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": prompt},
+                    {"type": "input_image", "image_url": data_url},
+                ],
+            }],
+        )
+        out_text = getattr(resp, "output_text", None)
+        if out_text:
+            return out_text.strip()
+
+        # Fallback: try to parse output blocks
+        try:
+            chunks = []
+            for item in getattr(resp, "output", []) or []:
+                for c in getattr(item, "content", []) or []:
+                    if getattr(c, "type", "") in ("output_text", "text"):
+                        chunks.append(getattr(c, "text", ""))
+            joined = "\n".join([x for x in chunks if x]).strip()
+            return joined or "Не получилось получить ответ от модели."
+        except Exception:
+            return "Не получилось получить ответ от модели."
+    except Exception as e:
+        return f"Ошибка анализа по фото: {type(e).__name__}"
+
+async def handle_plant_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("awaiting_photo"):
+        return
+    context.user_data["awaiting_photo"] = False
+
+    try:
+        photo = update.message.photo[-1]
+        tg_file = await photo.get_file()
+        image_bytes = await tg_file.download_as_bytearray()
+        answer = await _analyze_with_openai(bytes(image_bytes))
+        await update.message.reply_text(answer)
+    except Exception as e:
+        await update.message.reply_text(f"Не смогла обработать фото: {type(e).__name__}")
+
+
 
 def build_main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
@@ -102,37 +193,14 @@ def build_main_menu() -> ReplyKeyboardMarkup:
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = "**Помню, когда поливать твои растения🌿**\n\nОткрой приложение кнопкой ниже."
+    text = "**Помню, когда поливать твои растения🌿**\n\nОткрой приложение или выбери действие в меню ниже."
     if update.message:
-        # Hard reset: убираем reply-клавиатуру (она кешируется) и даём WebApp через inline-кнопку.
         await update.message.reply_text("Обновляю интерфейс…", reply_markup=ReplyKeyboardRemove())
         await update.message.reply_text(text, reply_markup=build_open_inline(), parse_mode="Markdown")
-
-
-# ---------------- Photo analysis (MVP) ----------------
-
-async def cmd_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["awaiting_photo"] = True
-    await update.message.reply_text(
-        "Пришли фото растения — я посмотрю и подскажу 🌿\n"
-        "Небольшой дисклеймер: это не диагноз, а помощь по уходу."
-    )
-
-async def handle_plant_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.user_data.get("awaiting_photo"):
-        return
-
-    context.user_data["awaiting_photo"] = False
-
-    photo = update.message.photo[-1]
-    await update.message.reply_text(
-        "Я посмотрела фото растения 🌿\n\n"
-        "Что видно: листья без явных критических повреждений.\n"
-        "Возможные гипотезы: если есть пожелтение, это может быть связано с режимом полива или освещением.\n\n"
-        "Если хочешь более точный разбор — пришли фото поближе или напиши, что именно беспокоит."
-    )
+        await update.message.reply_text("Меню:", reply_markup=build_bot_menu())
 
 tg_app.add_handler(CommandHandler("start", cmd_start))
+tg_app.add_handler(MessageHandler(filters.Regex(f"^{MENU_APP}$"), cmd_open))
 tg_app.add_handler(MessageHandler(filters.Regex(f"^{MENU_PHOTO}$"), cmd_photo))
 tg_app.add_handler(MessageHandler(filters.PHOTO, handle_plant_photo))
 
@@ -198,7 +266,7 @@ async def _shutdown():
         pass
 
 
-APP_VERSION = "debug-v18-photo-mvp"
+APP_VERSION = "mvp-v18-photo"
 
 @app.get("/debug/version")
 async def debug_version():
