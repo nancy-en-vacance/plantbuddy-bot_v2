@@ -24,10 +24,12 @@ def verify_telegram_init_data(init_data: str, bot_token: str) -> dict:
 
     data_check_string = "\n".join(f"{k}={data[k]}" for k in sorted(data.keys()))
 
-    secret_key = hashlib.sha256(bot_token.encode("utf-8")).digest()
+        # Telegram WebApp secret: HMAC_SHA256(key="WebAppData", msg=bot_token)
+    secret_key = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
     computed_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
 
     if not hmac.compare_digest(computed_hash, received_hash):
+        print("INITDATA_VERIFY_FAIL: hash_mismatch")
         raise ValueError("Bad initData signature")
 
     return data
@@ -67,7 +69,7 @@ BASE_URL = os.getenv("BASE_URL")
 # Inline WebApp opener (hard-reset friendly)
 def build_open_inline() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=9"))]]
+        [[InlineKeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=10"))]]
     )
 
 if not BOT_TOKEN or not BASE_URL:
@@ -87,7 +89,7 @@ MENU_APP = "🧾Открыть PlantBuddy"
 def build_main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            [KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=9"))],
+            [KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=10"))],
             [KeyboardButton(MENU_TODAY), KeyboardButton(MENU_WATER)],
             [KeyboardButton(MENU_PHOTO), KeyboardButton(MENU_PLANTS)],
             [KeyboardButton(MENU_NORMS)],
@@ -166,7 +168,7 @@ async def _startup():
         await tg_app.bot.set_chat_menu_button(
             menu_button=MenuButtonWebApp(
                 text="🧾Открыть PlantBuddy",
-                web_app=WebAppInfo(url=f"{BASE_URL}/app?v=9")
+                web_app=WebAppInfo(url=f"{BASE_URL}/app?v=10")
             )
         )
     except Exception:
@@ -181,7 +183,7 @@ async def _shutdown():
         pass
 
 
-APP_VERSION = "debug-v9-openfix"
+APP_VERSION = "debug-v10-webapp-hmac"
 
 @app.get("/debug/version")
 async def debug_version():
