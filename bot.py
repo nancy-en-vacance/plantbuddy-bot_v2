@@ -157,7 +157,7 @@ async def _startup():
         await tg_app.bot.set_chat_menu_button(
             menu_button=MenuButtonWebApp(
                 text="🧾Открыть PlantBuddy",
-                web_app=WebAppInfo(url=f"{BASE_URL}/app?v=14")
+                web_app=WebAppInfo(url=f"{BASE_URL}/app?v=15")
             )
         )
     except Exception:
@@ -172,7 +172,7 @@ async def _shutdown():
         pass
 
 
-APP_VERSION = "debug-v14-jsonable-encoder"
+APP_VERSION = "mvp-v15-today-shape"
 
 @app.get("/debug/version")
 async def debug_version():
@@ -204,8 +204,59 @@ async def api_ping():
 @app.get("/api/today")
 async def api_today(request: Request):
     user_id = get_user_id_from_request(request)
-    items = storage.list_plants_full(user_id)
-    return JSONResponse(content=jsonable_encoder({"items": items}))
+    plants = storage.list_plants_full(user_id)
+
+    now = datetime.utcnow()
+    items = []
+    for p in plants:
+        pid = p.get("id")
+        name = p.get("name")
+        norm = p.get("watering_norm_days")
+        last = p.get("last_watered_at")
+
+        days_since = None
+        if last:
+            try:
+                if isinstance(last, str):
+                    last = last.replace("Z", "+00:00")
+                    last = datetime.fromisoformat(last)
+                if isinstance(last, datetime) and last.tzinfo is None:
+                    last = last.replace(tzinfo=timezone.utc)
+                if isinstance(last, datetime):
+                    days_since = (now - last).days
+            except Exception:
+                days_since = None
+
+        # status logic:
+        # - no norm => unknown
+        # - never watered but norm exists => due
+        # - watered => compare days_since vs norm
+        status = "ok"
+        due_in = None
+        if norm is None:
+            status = "unknown"
+        elif days_since is None:
+            status = "due"
+            due_in = 0
+        else:
+            due_in = int(norm) - int(days_since)
+            if due_in < 0:
+                status = "overdue"
+            elif due_in == 0:
+                status = "due"
+            else:
+                status = "ok"
+
+        items.append({
+            "id": pid,
+            "name": name,
+            "norm_days": norm,
+            "days_since_last_watering": days_since,
+            "due_in_days": due_in,
+            "status": status,
+        })
+
+    return JSONResponse(content={"items": items})
 
 
 @app.post("/api/water")
