@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, WebAppInfo
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 import storage  # existing storage.py
@@ -35,7 +35,7 @@ MENU_APP = "🧾Открыть PlantBuddy"
 def build_main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            [KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=5"))],
+            [KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=6"))],
             [KeyboardButton(MENU_TODAY), KeyboardButton(MENU_WATER)],
             [KeyboardButton(MENU_PHOTO), KeyboardButton(MENU_PLANTS)],
             [KeyboardButton(MENU_NORMS)],
@@ -46,18 +46,22 @@ def build_main_menu() -> ReplyKeyboardMarkup:
     )
 
 
-from telegram import ReplyKeyboardRemove
-
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # 1) снять старую клавиатуру (важно)
-    await update.message.reply_text("Обновляю интерфейс…", reply_markup=ReplyKeyboardRemove())
-
-    # 2) прислать заново новую (уже web_app-кнопка)
     text = "**Помню, когда поливать твои растения🌿**\n\nНажми кнопку снизу или напиши команду."
-    await update.message.reply_text(text, reply_markup=build_main_menu(), parse_mode="Markdown")
-
+    # Telegram иногда кеширует старую клавиатуру и открывает WebView без initData.
+    # Снимаем клавиатуру и сразу ставим заново — это принудительно обновляет WebApp-кнопку.
+    if update.message:
+        await update.message.reply_text("Обновляю интерфейс…", reply_markup=ReplyKeyboardRemove())
+        await update.message.reply_text(text, reply_markup=build_main_menu(), parse_mode="Markdown")
 
 tg_app.add_handler(CommandHandler("start", cmd_start))
+
+async def cmd_reset_kb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message:
+        await update.message.reply_text("Сбрасываю клавиатуру…", reply_markup=ReplyKeyboardRemove())
+        await update.message.reply_text("Готово.", reply_markup=build_main_menu())
+
+tg_app.add_handler(CommandHandler("reset_kb", cmd_reset_kb))
 
 
 def validate_init_data(init_data: str) -> dict:
@@ -110,7 +114,7 @@ async def _shutdown():
         pass
 
 
-APP_VERSION = "debug-v5"
+APP_VERSION = "debug-v6"
 
 @app.get("/debug/version")
 async def debug_version():
