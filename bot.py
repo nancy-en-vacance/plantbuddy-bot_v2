@@ -35,7 +35,7 @@ MENU_APP = "🧾Открыть PlantBuddy"
 def build_main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            [KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=4"))],
+            [KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=5"))],
             [KeyboardButton(MENU_TODAY), KeyboardButton(MENU_WATER)],
             [KeyboardButton(MENU_PHOTO), KeyboardButton(MENU_PLANTS)],
             [KeyboardButton(MENU_NORMS)],
@@ -104,7 +104,13 @@ async def _shutdown():
         pass
 
 
-@app.get("/")
+APP_VERSION = "debug-v5"
+
+@app.get("/debug/version")
+async def debug_version():
+    return {"version": APP_VERSION, "base_url": BASE_URL}
+
+@app.api_route("/", methods=["GET","HEAD"])
 async def root():
     return {"ok": True}
 
