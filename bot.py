@@ -10,12 +10,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from telegram import (
-    Update,
-    ReplyKeyboardMarkup,
-    KeyboardButton,
-    WebAppInfo,
-)
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 import storage  # existing storage.py
@@ -26,10 +21,7 @@ BASE_URL = os.getenv("BASE_URL")
 if not BOT_TOKEN or not BASE_URL:
     raise RuntimeError("BOT_TOKEN and BASE_URL must be set")
 
-# ---------------- FastAPI app ----------------
 app = FastAPI()
-
-# ---------------- Telegram app ----------------
 tg_app = Application.builder().token(BOT_TOKEN).build()
 
 MENU_TODAY = "📅План на сегодня"
@@ -43,7 +35,7 @@ MENU_APP = "🧾Открыть PlantBuddy"
 def build_main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            [KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=3"))],
+            [KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=4"))],
             [KeyboardButton(MENU_TODAY), KeyboardButton(MENU_WATER)],
             [KeyboardButton(MENU_PHOTO), KeyboardButton(MENU_PLANTS)],
             [KeyboardButton(MENU_NORMS)],
@@ -55,16 +47,13 @@ def build_main_menu() -> ReplyKeyboardMarkup:
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # UX requirement: bold phrase in start message
     text = "**Помню, когда поливать твои растения🌿**\n\nНажми кнопку снизу или напиши команду."
     await update.message.reply_text(text, reply_markup=build_main_menu(), parse_mode="Markdown")
 
 
-# Register minimal handler(s). You can add the rest back later; this keeps the bot usable.
 tg_app.add_handler(CommandHandler("start", cmd_start))
 
 
-# ---------------- initData validation ----------------
 def validate_init_data(init_data: str) -> dict:
     if not init_data:
         raise HTTPException(status_code=401, detail="Missing initData")
@@ -74,7 +63,6 @@ def validate_init_data(init_data: str) -> dict:
     if not received_hash:
         raise HTTPException(status_code=401, detail="Missing hash")
 
-    # anti-replay
     auth_date = int(data.get("auth_date", "0"))
     now = int(datetime.now(tz=timezone.utc).timestamp())
     if now - auth_date > 60 * 10:
@@ -92,6 +80,8 @@ def validate_init_data(init_data: str) -> dict:
 
 def get_user_id_from_request(req: Request) -> int:
     init_data = req.headers.get("X-Telegram-InitData", "")
+    print(f"X-Telegram-InitData len={len(init_data)}", flush=True)
+
     data = validate_init_data(init_data)
     user = json.loads(data.get("user", "{}"))
     uid = user.get("id")
@@ -100,17 +90,14 @@ def get_user_id_from_request(req: Request) -> int:
     return int(uid)
 
 
-# ---------------- FastAPI lifecycle ----------------
 @app.on_event("startup")
 async def _startup():
-    # Initialize telegram application once and set webhook
     await tg_app.initialize()
     await tg_app.bot.set_webhook(url=f"{BASE_URL}/webhook")
 
 
 @app.on_event("shutdown")
 async def _shutdown():
-    # Graceful shutdown
     try:
         await tg_app.shutdown()
     except Exception:
@@ -121,7 +108,7 @@ async def _shutdown():
 async def root():
     return {"ok": True}
 
-# ---------------- Web routes ----------------
+
 @app.get("/app")
 async def app_page():
     try:
@@ -133,6 +120,11 @@ async def app_page():
     resp.headers["Pragma"] = "no-cache"
     resp.headers["Expires"] = "0"
     return resp
+
+
+@app.get("/api/ping")
+async def api_ping():
+    return {"ok": True}
 
 
 @app.get("/api/today")
