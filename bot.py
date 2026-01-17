@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, WebAppInfo
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, WebAppInfo, InlineKeyboardMarkup, InlineKeyboardButton, MenuButtonWebApp
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 import storage  # existing storage.py
@@ -35,7 +35,7 @@ MENU_APP = "🧾Открыть PlantBuddy"
 def build_main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            [KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=6"))],
+            [KeyboardButton(MENU_APP, web_app=WebAppInfo(url=f"{BASE_URL}/app?v=7"))],
             [KeyboardButton(MENU_TODAY), KeyboardButton(MENU_WATER)],
             [KeyboardButton(MENU_PHOTO), KeyboardButton(MENU_PLANTS)],
             [KeyboardButton(MENU_NORMS)],
@@ -47,14 +47,19 @@ def build_main_menu() -> ReplyKeyboardMarkup:
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = "**Помню, когда поливать твои растения🌿**\n\nНажми кнопку снизу или напиши команду."
-    # Telegram иногда кеширует старую клавиатуру и открывает WebView без initData.
-    # Снимаем клавиатуру и сразу ставим заново — это принудительно обновляет WebApp-кнопку.
+    text = "**Помню, когда поливать твои растения🌿**\n\nОткрой приложение кнопкой ниже."
     if update.message:
+        # Hard reset: убираем reply-клавиатуру (она кешируется) и даём WebApp через inline-кнопку.
         await update.message.reply_text("Обновляю интерфейс…", reply_markup=ReplyKeyboardRemove())
-        await update.message.reply_text(text, reply_markup=build_main_menu(), parse_mode="Markdown")
+        await update.message.reply_text(text, reply_markup=build_open_inline(), parse_mode="Markdown")
 
 tg_app.add_handler(CommandHandler("start", cmd_start))
+
+async def cmd_open(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message:
+        await update.message.reply_text("Открываю PlantBuddy…", reply_markup=build_open_inline())
+
+tg_app.add_handler(CommandHandler("open", cmd_open))
 
 async def cmd_reset_kb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
@@ -104,6 +109,16 @@ def get_user_id_from_request(req: Request) -> int:
 async def _startup():
     await tg_app.initialize()
     await tg_app.bot.set_webhook(url=f"{BASE_URL}/webhook")
+    # Hard reset: добавляем кнопку в меню чата (работает стабильнее на iOS, чем reply keyboard)
+    try:
+        await tg_app.bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(
+                text="🧾Открыть PlantBuddy",
+                web_app=WebAppInfo(url=f"{BASE_URL}/app?v=7")
+            )
+        )
+    except Exception:
+        pass
 
 
 @app.on_event("shutdown")
@@ -114,7 +129,7 @@ async def _shutdown():
         pass
 
 
-APP_VERSION = "debug-v6"
+APP_VERSION = "debug-v7-hardreset"
 
 @app.get("/debug/version")
 async def debug_version():
