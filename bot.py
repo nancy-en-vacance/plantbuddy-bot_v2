@@ -46,7 +46,13 @@ def build_main_menu() -> ReplyKeyboardMarkup:
     )
 
 
+from telegram import ReplyKeyboardRemove
+
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # 1) снять старую клавиатуру (важно)
+    await update.message.reply_text("Обновляю интерфейс…", reply_markup=ReplyKeyboardRemove())
+
+    # 2) прислать заново новую (уже web_app-кнопка)
     text = "**Помню, когда поливать твои растения🌿**\n\nНажми кнопку снизу или напиши команду."
     await update.message.reply_text(text, reply_markup=build_main_menu(), parse_mode="Markdown")
 
