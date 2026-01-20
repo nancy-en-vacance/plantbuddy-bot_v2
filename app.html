@@ -163,6 +163,32 @@
 
     @keyframes shimmer{0%{background-position:200% 0;}100%{background-position:-200% 0;}}
 
+
+
+    /* Clickable pills as filters */
+    button.pill{cursor:pointer;font-family:inherit;color:inherit}
+    button.pill{border:1px solid var(--border);background:#FFFFFF}
+    button.pill:disabled{opacity:.55;cursor:default}
+    .pill.active{border-color:#8FD5A8;box-shadow:0 10px 25px rgba(92,148,110,.18)}
+
+    /* Toast */
+    .toast{
+      position:fixed;
+      left:16px;
+      right:16px;
+      bottom:110px;
+      max-width:520px;
+      margin:0 auto;
+      padding:12px 14px;
+      border-radius:16px;
+      border:1px solid var(--border);
+      background:#FFFFFF;
+      color:var(--text);
+      box-shadow:0 12px 28px rgba(42,45,52,.14);
+      font-weight:800;
+      z-index:50;
+    }
+
     /* Better tap targets in Telegram */
     button, input { -webkit-tap-highlight-color: transparent; }
   </style>
@@ -189,6 +215,8 @@
     </div>
 
     <div class="error" id="error" style="display:none"></div>
+
+    <div class="toast" id="toast" style="display:none"></div>
   </div>
 
   <div class="btnbar">
@@ -219,6 +247,7 @@
     stats: document.getElementById("stats"),
     list: document.getElementById("list"),
     error: document.getElementById("error"),
+    toast: document.getElementById("toast"),
     btnWater: document.getElementById("btnWater"),
     btnSelectAll: document.getElementById("btnSelectAll"),
     btnSelectNeed: document.getElementById("btnSelectNeed"),
@@ -230,6 +259,7 @@
     selected: new Set(),
     loading: true,
     saving: false,
+    filter: "all",
   };
 
   function showError(msg){
@@ -241,6 +271,31 @@
     els.error.style.display = "none";
     els.error.textContent = "";
   }
+  function showToast(msg){
+    if (!els.toast) return;
+    els.toast.style.display = "block";
+    els.toast.textContent = msg;
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(()=>{
+      els.toast.style.display = "none";
+      els.toast.textContent = "";
+    }, 2200);
+  }
+
+  function filterLabel(f){
+    if (f === "overdue") return "Просрочено";
+    if (f === "due") return "Пора";
+    if (f === "ok") return "Ок";
+    if (f === "unknown") return "Нужно настроить";
+    return "Все";
+  }
+
+  function getFilteredItems(){
+    const f = state.filter || "all";
+    if (f === "all") return state.items;
+    return state.items.filter(x => (x.status || "ok") === f);
+  }
+
 
   function apiFetch(path, opts){
     opts = opts || {};
@@ -263,10 +318,10 @@
     const abs = Math.abs(n);
     const d = abs % 10;
     const dd = abs % 100;
-    if (dd >= 11 && dd <= 14) return abs + "дн";
-    if (d === 1) return abs + "дн";
-    if (d >= 2 && d <= 4) return abs + "дн";
-    return abs + "дн";
+    if (dd >= 11 && dd <= 14) return abs + "дн.";
+    if (d === 1) return abs + "дн.";
+    if (d >= 2 && d <= 4) return abs + "дн.";
+    return abs + "дн.";
   }
 
   function selectionCount(){
@@ -285,6 +340,15 @@
     els.btnWater.textContent = state.saving ? "Отмечаю…" : "✅Отметить полив";
   }
 
+  els.stats.addEventListener("click", (e)=>{
+    const btn = e.target && e.target.closest ? e.target.closest("[data-filter]") : null;
+    if (!btn || state.loading || state.saving) return;
+    const f = btn.getAttribute("data-filter") || "all";
+    state.filter = f;
+    // when filter changes, keep selection but update counters/text
+    render();
+  });
+
   function render(){
     // subtitle
     if (state.loading){
@@ -293,7 +357,7 @@
       const total = state.items.length;
       const sel = selectionCount();
       els.subtitle.textContent = total
-        ? `Растений: ${total} · Выбрано: ${sel}`
+        ? `Растений: ${total} · Выбрано: ${sel} · Фильтр: ${filterLabel(state.filter)}`
         : "Пока нет растений. Добавь их в боте через /add_plant";
     }
 
@@ -304,11 +368,13 @@
         const k = it.status || "ok";
         counts[k] = (counts[k] || 0) + 1;
       }
+      const totalAll = (counts.overdue||0) + (counts.due||0) + (counts.ok||0) + (counts.unknown||0);
       els.stats.innerHTML = `
-        <div class="pill">🥲Просрочено: ${counts.overdue||0}</div>
-        <div class="pill">⏰Пора: ${counts.due||0}</div>
-        <div class="pill">✅Ок: ${counts.ok||0}</div>
-        <div class="pill">ℹ️Настроить: ${counts.unknown||0}</div>
+        <button type="button" class="pill ${state.filter==='all'?'active':''}" data-filter="all">📋Все: ${totalAll}</button>
+        <button type="button" class="pill ${state.filter==='overdue'?'active':''}" data-filter="overdue">🥲Просрочено: ${counts.overdue||0}</button>
+        <button type="button" class="pill ${state.filter==='due'?'active':''}" data-filter="due">⏰Пора: ${counts.due||0}</button>
+        <button type="button" class="pill ${state.filter==='ok'?'active':''}" data-filter="ok">✅Ок: ${counts.ok||0}</button>
+        <button type="button" class="pill ${state.filter==='unknown'?'active':''}" data-filter="unknown">ℹ️Настроить: ${counts.unknown||0}</button>
       `;
       els.stats.style.display = "flex";
     } else {
@@ -329,7 +395,18 @@
       empty.textContent = "Тут пока пусто. Добавь растения в боте через /add_plant.";
       els.list.appendChild(empty);
     } else {
-      for (const it of state.items){
+      const filtered = getFilteredItems();
+
+      if (!filtered.length){
+        const empty = document.createElement("div");
+        empty.className = "banner";
+        empty.textContent = "По фильтру ничего нет.";
+        els.list.appendChild(empty);
+        updateButtons();
+        return;
+      }
+
+      for (const it of filtered){
         const card = document.createElement("div");
         card.className = "card";
 
@@ -346,7 +423,7 @@
           if (!state.loading) {
             const total = state.items.length;
             const sel = selectionCount();
-            els.subtitle.textContent = total ? `Растений: ${total}·Выбрано:${sel}` : els.subtitle.textContent;
+            els.subtitle.textContent = total ? `Растений: ${total} · Выбрано: ${sel} · Фильтр: ${filterLabel(state.filter)}` : els.subtitle.textContent;
           }
         });
 
@@ -376,7 +453,7 @@
         small.className = "small";
         const parts = [];
         if (it.days_since_last_watering !== null && it.days_since_last_watering !== undefined){
-          parts.push(`Последний полив: ${fmtDays(it.days_since_last_watering)}. назад`);
+          parts.push(`Последний полив: ${fmtDays(it.days_since_last_watering)} назад`);
         } else {
           parts.push("Последний полив: — ");
         }
@@ -495,6 +572,8 @@
       if (!r.ok){
         throw new Error(JSON.stringify(j));
       }
+      const updated = (j && typeof j.updated === "number") ? j.updated : body.plant_ids.length;
+      showToast(`✅Полив отмечен: ${updated}`);
       state.selected.clear();
       await load();
     } catch(e){
