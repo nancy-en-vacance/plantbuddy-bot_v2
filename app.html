@@ -185,7 +185,7 @@
     </div>
 
     <div class="banner">
-      ℹ️Анализ фото отправляет изображение в OpenAI(только если ты нажмёшь анализ в боте).
+      ℹ️Совет по уходу за растениями (доступно только из чат-бота).
     </div>
 
     <div class="error" id="error" style="display:none"></div>
@@ -195,7 +195,7 @@
     <div class="bar">
       <div class="barlinks">
         <button class="linkbtn" id="btnSelectAll" disabled>Выбрать всё</button>
-        <button class="linkbtn" id="btnSelectNeed" disabled>Выбрать:пора+просрочено</button>
+        <button class="linkbtn" id="btnSelectNeed" disabled>Выбрать: пора + просрочено</button>
         <button class="linkbtn" id="btnClear" disabled>Сбросить</button>
       </div>
       <button class="btn" id="btnWater" disabled>✅Отметить полив</button>
@@ -305,10 +305,10 @@
         counts[k] = (counts[k] || 0) + 1;
       }
       els.stats.innerHTML = `
-        <div class="pill">🧡Просрочено:${counts.overdue||0}</div>
-        <div class="pill">⏰Пора:${counts.due||0}</div>
-        <div class="pill">✅Ок:${counts.ok||0}</div>
-        <div class="pill">ℹ️Настроить:${counts.unknown||0}</div>
+        <div class="pill">🥲Просрочено: ${counts.overdue||0}</div>
+        <div class="pill">⏰Пора: ${counts.due||0}</div>
+        <div class="pill">✅Ок: ${counts.ok||0}</div>
+        <div class="pill">ℹ️Настроить: ${counts.unknown||0}</div>
       `;
       els.stats.style.display = "flex";
     } else {
@@ -346,7 +346,7 @@
           if (!state.loading) {
             const total = state.items.length;
             const sel = selectionCount();
-            els.subtitle.textContent = total ? `Растений:${total}·Выбрано:${sel}` : els.subtitle.textContent;
+            els.subtitle.textContent = total ? `Растений: ${total}·Выбрано:${sel}` : els.subtitle.textContent;
           }
         });
 
@@ -367,7 +367,7 @@
 
         const n = document.createElement("span");
         n.className = "tag";
-        n.textContent = it.norm_days ? `Норма:${it.norm_days}дн` : "Норма:—";
+        n.textContent = it.norm_days ? `Норма: ${it.norm_days}дн` : "Норма: — ";
 
         row.appendChild(st);
         row.appendChild(n);
@@ -376,14 +376,14 @@
         small.className = "small";
         const parts = [];
         if (it.days_since_last_watering !== null && it.days_since_last_watering !== undefined){
-          parts.push(`Последний полив:${fmtDays(it.days_since_last_watering)}назад`);
+          parts.push(`Последний полив: ${fmtDays(it.days_since_last_watering)}назад`);
         } else {
-          parts.push("Последний полив:—");
+          parts.push("Последний полив: — ");
         }
         if (it.due_in_days !== null && it.due_in_days !== undefined){
-          if (it.due_in_days < 0) parts.push(`Просрочка:${fmtDays(it.due_in_days)}`);
+          if (it.due_in_days < 0) parts.push(`Просрочка: ${fmtDays(it.due_in_days)}`);
           else if (it.due_in_days === 0) parts.push("Пора сегодня");
-          else parts.push(`До полива:${fmtDays(it.due_in_days)}`);
+          else parts.push(`До полива: ${fmtDays(it.due_in_days)}`);
         }
         small.textContent = parts.join(" · ");
 
