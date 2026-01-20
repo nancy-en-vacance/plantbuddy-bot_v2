@@ -5,129 +5,167 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>PlantBuddy</title>
   <style>
+    :root{
+      --bg:#F6FBFD;
+      --card:#FFFFFF;
+      --text:#2A2D34;
+      --muted:#4B5563;
+      --border:#D7E2E8;
+      --accent:#30C5FF;
+      --accent2:#5C946E;
+      --danger:#D64545;
+      --warn:#C57F1E;
+      --shadow:0 10px 30px rgba(42,45,52,.10);
+      --radius:18px;
+    }
 
-  :root{
-    --bg:#F6FBFD;
-    --card:#FFFFFF;
-    --text:#2A2D34;
-    --muted:#4B5563;
-    --border:#D7E2E8;
-    --accent:#30C5FF;
-    --accent2:#5C946E;
-    --accent3:#80C2AF;
-    --danger:#D64545;
-    --warn:#C57F1E;
-    --shadow:0 10px 30px rgba(42,45,52,.10);
-    --radius:18px;
-  }
+    html,body{height:100%;}
+    body{
+      margin:0;
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Ubuntu,"Helvetica Neue",Arial,"Noto Sans",sans-serif;
+      background:var(--bg);
+      color:var(--text);
+    }
 
-  html,body{height:100%;}
-  body{
-    margin:0;
-    font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
-    background:var(--bg);
-    color:var(--text);
-  }
+    .wrap{max-width:520px;margin:0 auto;padding:18px 16px 120px;}
 
-  .wrap{max-width:520px;margin:0 auto;padding:18px 16px 100px;}
+    /* Header */
+    .hrow{display:flex;align-items:center;gap:10px;margin-top:8px;}
+    .hicon{width:42px;height:42px;border-radius:14px;display:flex;align-items:center;justify-content:center;background:#fff;border:1px solid var(--border);box-shadow:0 4px 14px rgba(42,45,52,.06);}
+    h1{margin:0;font-size:30px;font-weight:900;letter-spacing:-0.02em;}
+    .sub{margin:8px 0 0;color:var(--muted);}
 
-  .header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-top:10px;}
-  .h1{font-size:40px;font-weight:800;letter-spacing:-0.02em;display:flex;align-items:center;gap:10px;}
-  .sub{margin-top:6px;color:var(--muted);}
+    /* Stats */
+    .stats{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;}
+    .pill{
+      display:inline-flex;align-items:center;gap:8px;
+      padding:8px 10px;
+      border:1px solid var(--border);
+      border-radius:999px;
+      background:#FFFFFF;
+      box-shadow:0 2px 10px rgba(42,45,52,.06);
+      font-weight:700;
+      font-size:13px;
+    }
 
-  .pill{
-    display:inline-flex;align-items:center;gap:8px;
-    padding:8px 10px;border:1px solid var(--border);
-    border-radius:999px;background:#FFFFFF;
-    box-shadow:0 2px 10px rgba(42,45,52,.06);
-  }
+    /* List */
+    .list{margin-top:16px;display:flex;flex-direction:column;gap:12px;}
 
-  .list{margin-top:18px;display:flex;flex-direction:column;gap:12px;}
+    .card{
+      display:flex;gap:12px;align-items:flex-start;
+      padding:14px;
+      border:1px solid var(--border);
+      border-radius:var(--radius);
+      background:var(--card);
+      box-shadow:0 8px 24px rgba(42,45,52,.08);
+      cursor:pointer;
+      user-select:none;
+    }
+    .card:active{transform:translateY(1px);}
 
-  .card{
-    display:flex;gap:12px;align-items:flex-start;
-    padding:14px 14px;
-    border:1px solid var(--border);
-    border-radius:var(--radius);
-    background:var(--card);
-    box-shadow:0 8px 24px rgba(42,45,52,.08);
-  }
+    .check{width:22px;height:22px;margin-top:4px;accent-color:var(--accent2);}
 
-  .check{width:22px;height:22px;margin-top:4px;accent-color:var(--accent2);}
+    .meta{flex:1;min-width:0;}
+    .title{font-weight:800;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 
-  .meta{flex:1;min-width:0;}
-  .title{font-weight:750;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
 
-  .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
+    .tag{
+      display:inline-flex;align-items:center;justify-content:center;
+      padding:4px 10px;
+      border-radius:999px;
+      border:1px solid var(--border);
+      background:#F8FAFC;
+      color:var(--text);
+      font-size:13px;
+      font-weight:700;
+    }
+    .tag.ok{background:#EAF6EF;border-color:#CFE6D7;color:var(--accent2);}
+    .tag.due{background:#FFF3E0;border-color:#F6D7A8;color:var(--warn);}
+    .tag.overdue{background:#FDECEC;border-color:#F4C7C7;color:var(--danger);}
+    .tag.unknown{background:#F3F4F6;border-color:#E5E7EB;color:#6B7280;}
 
-  .tag{
-    display:inline-flex;align-items:center;justify-content:center;
-    padding:4px 10px;
-    border-radius:999px;
-    border:1px solid var(--border);
-    background:#F8FAFC;
-    color:var(--text);
-    font-size:13px;
-  }
+    .small{margin-top:8px;color:var(--muted);font-size:13px;line-height:1.35;}
 
-  .tag.ok{background:#EAF6EF;border-color:#CFE6D7;color:var(--accent2);}
-  .tag.due{background:#FFF3E0;border-color:#F6D7A8;color:var(--warn);}
-  .tag.overdue{background:#FDECEC;border-color:#F4C7C7;color:var(--danger);}
-  .tag.unknown{background:#F3F4F6;border-color:#E5E7EB;color:#6B7280;}
+    .banner{
+      margin-top:12px;
+      padding:14px;
+      border-radius:var(--radius);
+      border:1px solid var(--border);
+      background:#FFFFFF;
+      color:var(--muted);
+      box-shadow:0 6px 18px rgba(42,45,52,.06);
+    }
 
-  .small{margin-top:8px;color:var(--muted);font-size:13px;line-height:1.35;}
+    .error{
+      margin-top:12px;
+      padding:12px 14px;
+      border-radius:var(--radius);
+      border:1px solid #F4C7C7;
+      background:#FDECEC;
+      color:var(--danger);
+      white-space:pre-wrap;
+    }
 
-  .banner{
-    padding:14px;
-    border-radius:var(--radius);
-    border:1px solid var(--border);
-    background:#FFFFFF;
-    color:var(--muted);
-  }
+    /* Bottom bar */
+    .btnbar{
+      position:fixed;left:0;right:0;bottom:0;
+      padding:12px 16px 18px;
+      background:linear-gradient(to top, var(--bg) 70%, rgba(246,251,253,0));
+    }
 
-  .error{
-    margin-top:14px;
-    padding:12px 14px;
-    border-radius:var(--radius);
-    border:1px solid #F4C7C7;
-    background:#FDECEC;
-    color:var(--danger);
-    white-space:pre-wrap;
-  }
+    .bar{
+      width:min(520px, calc(100vw - 32px));
+      margin:0 auto;
+    }
 
-  .btnbar{
-    position:fixed;left:0;right:0;bottom:0;
-    padding:14px 16px 18px;
-    background:linear-gradient(to top, var(--bg) 70%, rgba(246,251,253,0));
-  }
+    .barlinks{
+      display:flex;justify-content:space-between;gap:12px;
+      margin-bottom:10px;
+      flex-wrap:wrap;
+    }
 
-  .btn{
-    width:min(520px, calc(100vw - 32px));
-    margin:0 auto;
-    display:block;
-    border:none;
-    border-radius:16px;
-    padding:16px 18px;
-    font-weight:800;
-    font-size:16px;
-    color:#0A1B22;
-    background:var(--accent);
-    box-shadow:0 10px 25px rgba(48,197,255,.25);
-  }
-  .btn:disabled{opacity:.55;box-shadow:none;}
+    .linkbtn{
+      border:none;
+      background:transparent;
+      color:var(--muted);
+      font-weight:800;
+      font-size:13px;
+      padding:0;
+      text-decoration:underline;
+      cursor:pointer;
+    }
+    .linkbtn:disabled{opacity:.55;cursor:default;}
 
-  .skeleton{
-    height:74px;
-    border-radius:var(--radius);
-    border:1px solid var(--border);
-    background:linear-gradient(90deg, #FFFFFF, #F2F7FA, #FFFFFF);
-    background-size:200% 100%;
-    animation:shimmer 1.2s linear infinite;
-  }
+    .btn{
+      width:100%;
+      display:block;
+      border:none;
+      border-radius:16px;
+      padding:16px 18px;
+      font-weight:900;
+      font-size:16px;
+      color:#0A1B22;
+      background:var(--accent);
+      box-shadow:0 10px 25px rgba(48,197,255,.25);
+      cursor:pointer;
+    }
+    .btn:disabled{opacity:.55;box-shadow:none;cursor:default;}
 
-  @keyframes shimmer{0%{background-position:200% 0;}100%{background-position:-200% 0;}}
+    .skeleton{
+      height:74px;
+      border-radius:var(--radius);
+      border:1px solid var(--border);
+      background:linear-gradient(90deg, #FFFFFF, #F2F7FA, #FFFFFF);
+      background-size:200% 100%;
+      animation:shimmer 1.2s linear infinite;
+    }
 
-</style>
+    @keyframes shimmer{0%{background-position:200% 0;}100%{background-position:-200% 0;}}
+
+    /* Better tap targets in Telegram */
+    button, input { -webkit-tap-highlight-color: transparent; }
+  </style>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -148,10 +186,18 @@
 
     <div class="banner">
       ℹ️Анализ фото отправляет изображение в OpenAI(только если ты нажмёшь анализ в боте).
-      <div class="err" id="error" style="display:none"></div>
     </div>
 
-    <div class="actions">
+    <div class="error" id="error" style="display:none"></div>
+  </div>
+
+  <div class="btnbar">
+    <div class="bar">
+      <div class="barlinks">
+        <button class="linkbtn" id="btnSelectAll" disabled>Выбрать всё</button>
+        <button class="linkbtn" id="btnSelectNeed" disabled>Выбрать:пора+просрочено</button>
+        <button class="linkbtn" id="btnClear" disabled>Сбросить</button>
+      </div>
       <button class="btn" id="btnWater" disabled>✅Отметить полив</button>
     </div>
   </div>
@@ -162,29 +208,38 @@
   if (tg) {
     tg.ready();
     try { tg.expand(); } catch(e){}
-    // Light theme + brand accents (safe to ignore if not supported)
     try { tg.setHeaderColor('#A0DDE6'); } catch(e){}
     try { tg.setBackgroundColor('#F6FBFD'); } catch(e){}
   }
 
   const initData = tg ? (tg.initData || "") : "";
+
   const els = {
     subtitle: document.getElementById("subtitle"),
     stats: document.getElementById("stats"),
     list: document.getElementById("list"),
     error: document.getElementById("error"),
     btnWater: document.getElementById("btnWater"),
+    btnSelectAll: document.getElementById("btnSelectAll"),
+    btnSelectNeed: document.getElementById("btnSelectNeed"),
+    btnClear: document.getElementById("btnClear"),
   };
 
   const state = {
     items: [],
     selected: new Set(),
     loading: true,
+    saving: false,
   };
 
   function showError(msg){
     els.error.style.display = "block";
     els.error.textContent = msg;
+  }
+
+  function clearError(){
+    els.error.style.display = "none";
+    els.error.textContent = "";
   }
 
   function apiFetch(path, opts){
@@ -198,10 +253,36 @@
 
   function statusTag(s){
     // expected: overdue / due / ok / unknown
-    if (s === "overdue") return {cls:"danger", label:"Просрочено"};
-    if (s === "due") return {cls:"warn", label:"Пора"};
-    if (s === "unknown") return {cls:"neutral", label:"Нужно настроить"};
+    if (s === "overdue") return {cls:"overdue", label:"Просрочено"};
+    if (s === "due") return {cls:"due", label:"Пора"};
+    if (s === "unknown") return {cls:"unknown", label:"Нужно настроить"};
     return {cls:"ok", label:"Ок"};
+  }
+
+  function fmtDays(n){
+    const abs = Math.abs(n);
+    const d = abs % 10;
+    const dd = abs % 100;
+    if (dd >= 11 && dd <= 14) return abs + "дн";
+    if (d === 1) return abs + "дн";
+    if (d >= 2 && d <= 4) return abs + "дн";
+    return abs + "дн";
+  }
+
+  function selectionCount(){
+    return state.selected.size;
+  }
+
+  function updateButtons(){
+    const hasItems = !state.loading && state.items.length > 0;
+    const sel = selectionCount();
+
+    els.btnWater.disabled = state.loading || state.saving || sel === 0;
+    els.btnSelectAll.disabled = state.loading || state.saving || !hasItems;
+    els.btnSelectNeed.disabled = state.loading || state.saving || !hasItems;
+    els.btnClear.disabled = state.loading || state.saving || sel === 0;
+
+    els.btnWater.textContent = state.saving ? "Отмечаю…" : "✅Отметить полив";
   }
 
   function render(){
@@ -210,19 +291,24 @@
       els.subtitle.textContent = "Загружаю…";
     } else {
       const total = state.items.length;
-      const sel = state.selected.size;
-      els.subtitle.textContent = total ? `Растений: ${total} · Выбрано: ${sel}` : "Пока нет растений. Добавь их в боте через /add_plant";
+      const sel = selectionCount();
+      els.subtitle.textContent = total
+        ? `Растений:${total}·Выбрано:${sel}`
+        : "Пока нет растений. Добавь их в боте через /add_plant";
     }
 
     // stats
     if (!state.loading && state.items.length){
       const counts = {overdue:0, due:0, ok:0, unknown:0};
-      for (const it of state.items){ counts[it.status] = (counts[it.status]||0) + 1; }
+      for (const it of state.items){
+        const k = it.status || "ok";
+        counts[k] = (counts[k] || 0) + 1;
+      }
       els.stats.innerHTML = `
-        <div class="pill">🧡Просрочено: ${counts.overdue||0}</div>
-        <div class="pill">⏰Пора: ${counts.due||0}</div>
-        <div class="pill">✅Ок: ${counts.ok||0}</div>
-        <div class="pill">ℹ️Настроить: ${counts.unknown||0}</div>
+        <div class="pill">🧡Просрочено:${counts.overdue||0}</div>
+        <div class="pill">⏰Пора:${counts.due||0}</div>
+        <div class="pill">✅Ок:${counts.ok||0}</div>
+        <div class="pill">ℹ️Настроить:${counts.unknown||0}</div>
       `;
       els.stats.style.display = "flex";
     } else {
@@ -238,7 +324,6 @@
         els.list.appendChild(sk);
       }
     } else if (!state.items.length){
-      // empty
       const empty = document.createElement("div");
       empty.className = "banner";
       empty.textContent = "Тут пока пусто. Добавь растения в боте через /add_plant.";
@@ -252,10 +337,17 @@
         cb.type = "checkbox";
         cb.className = "check";
         cb.checked = state.selected.has(it.id);
+
         cb.addEventListener("change", ()=>{
           if (cb.checked) state.selected.add(it.id);
           else state.selected.delete(it.id);
-          render();
+          updateButtons();
+          // refresh subtitle only
+          if (!state.loading) {
+            const total = state.items.length;
+            const sel = selectionCount();
+            els.subtitle.textContent = total ? `Растений:${total}·Выбрано:${sel}` : els.subtitle.textContent;
+          }
         });
 
         const meta = document.createElement("div");
@@ -268,13 +360,14 @@
         const row = document.createElement("div");
         row.className = "row";
         const tag = statusTag(it.status);
+
         const st = document.createElement("span");
         st.className = `tag ${tag.cls}`;
         st.textContent = tag.label;
 
         const n = document.createElement("span");
         n.className = "tag";
-        n.textContent = it.norm_days ? `Норма: ${it.norm_days}дн` : "Норма: —";
+        n.textContent = it.norm_days ? `Норма:${it.norm_days}дн` : "Норма:—";
 
         row.appendChild(st);
         row.appendChild(n);
@@ -283,14 +376,14 @@
         small.className = "small";
         const parts = [];
         if (it.days_since_last_watering !== null && it.days_since_last_watering !== undefined){
-          parts.push(`Последний полив: ${it.days_since_last_watering}дн назад`);
+          parts.push(`Последний полив:${fmtDays(it.days_since_last_watering)}назад`);
         } else {
-          parts.push("Последний полив: —");
+          parts.push("Последний полив:—");
         }
         if (it.due_in_days !== null && it.due_in_days !== undefined){
-          if (it.due_in_days < 0) parts.push(`Просрочка: ${Math.abs(it.due_in_days)}дн`);
+          if (it.due_in_days < 0) parts.push(`Просрочка:${fmtDays(it.due_in_days)}`);
           else if (it.due_in_days === 0) parts.push("Пора сегодня");
-          else parts.push(`До полива: ${it.due_in_days}дн`);
+          else parts.push(`До полива:${fmtDays(it.due_in_days)}`);
         }
         small.textContent = parts.join(" · ");
 
@@ -312,18 +405,19 @@
       }
     }
 
-    // button
-    els.btnWater.disabled = state.selected.size === 0 || state.loading;
+    updateButtons();
   }
 
   async function load(){
     state.loading = true;
+    state.saving = false;
+    clearError();
     render();
 
     if (!initData){
       state.loading = false;
       render();
-      showError('Ошибка загрузки: {"detail":"Missing initData"}');
+      showError("Похоже, страница открыта не из Telegram.\nОткрой Mini App из чата с ботом PlantBuddy.");
       return;
     }
 
@@ -334,7 +428,6 @@
         throw new Error(JSON.stringify(j));
       }
 
-      // Expect backend to return: { items: [...] }
       state.items = (j.items || []).map(x => ({
         id: x.id,
         name: x.name,
@@ -346,7 +439,7 @@
 
       // Sort: overdue -> due -> unknown -> ok
       const order = {overdue:0, due:1, unknown:2, ok:3};
-      state.items.sort((a,b)=> (order[a.status]??9) - (order[b.status]??9));
+      state.items.sort((a,b)=> (order[a.status] ?? 9) - (order[b.status] ?? 9));
 
       state.loading = false;
       render();
@@ -357,10 +450,43 @@
     }
   }
 
+  function selectAll(){
+    state.selected = new Set(state.items.map(x => x.id));
+    render();
+  }
+
+  function selectNeed(){
+    const need = state.items.filter(x => x.status === "due" || x.status === "overdue");
+    state.selected = new Set(need.map(x => x.id));
+    render();
+  }
+
+  function clearSelection(){
+    state.selected.clear();
+    render();
+  }
+
+  els.btnSelectAll.addEventListener("click", ()=>{
+    if (state.loading || state.saving) return;
+    selectAll();
+  });
+
+  els.btnSelectNeed.addEventListener("click", ()=>{
+    if (state.loading || state.saving) return;
+    selectNeed();
+  });
+
+  els.btnClear.addEventListener("click", ()=>{
+    if (state.loading || state.saving) return;
+    clearSelection();
+  });
+
   els.btnWater.addEventListener("click", async ()=>{
-    if (state.selected.size === 0) return;
-    els.btnWater.disabled = true;
-    els.btnWater.textContent = "Отмечаю…";
+    if (selectionCount() === 0 || state.loading || state.saving) return;
+
+    state.saving = true;
+    clearError();
+    updateButtons();
 
     try{
       const body = { plant_ids: Array.from(state.selected) };
@@ -371,11 +497,10 @@
       }
       state.selected.clear();
       await load();
-      els.btnWater.textContent = "✅Отметить полив";
     } catch(e){
+      state.saving = false;
+      updateButtons();
       showError("Ошибка отметки: " + String(e && e.message ? e.message : e));
-      els.btnWater.textContent = "✅Отметить полив";
-      els.btnWater.disabled = false;
     }
   });
 
