@@ -151,9 +151,14 @@
       box-shadow:0 10px 25px rgba(48,197,255,.25);
       cursor:pointer;
     }
+
+    .btn.inactive{
+      background:#E5E7EB;
+      color:#6B7280;
+      box-shadow:none;
+      cursor:default;
+    }
     .btn:disabled{opacity:.55;box-shadow:none;cursor:default;}
-    .btn.inactive{background:#E5E7EB;color:#4B5563;box-shadow:none;}
-    .btn.inactive:disabled{opacity:1;}
 
     .skeleton{
       height:74px;
@@ -265,7 +270,7 @@
 
   <div class="btnbar" id="btnbar">
     <div class="bar">
-      <div class="barlinks">
+      <div class="barlinks" id="barlinks">
         <button class="linkbtn" id="btnSelectAll" disabled>Выбрать всё</button>
         <button class="linkbtn" id="btnSelectNeed" disabled>Выбрать: пора + просрочено</button>
         <button class="linkbtn" id="btnClear" disabled>Сбросить</button>
@@ -310,6 +315,7 @@
     adviceBanner: document.getElementById("adviceBanner"),
     list: document.getElementById("list"),
     error: document.getElementById("error"),
+    barlinks: document.getElementById("barlinks"),
     btnWater: document.getElementById("btnWater"),
     btnSelectAll: document.getElementById("btnSelectAll"),
     btnSelectNeed: document.getElementById("btnSelectNeed"),
@@ -451,11 +457,6 @@ const state = {
     return c;
   }
 
-  function actionsCount(items){
-    const c = statusCounts(items);
-    return (c.overdue + c.due + c.unknown);
-  }
-
   function renderStats(){
   if (!state.items.length){
     els.stats.style.display="none";
@@ -553,26 +554,29 @@ const state = {
   }
 
   function updateButtons(){
+    const c = statusCounts(state.items);
+    const action = c.overdue + c.due + c.unknown;
+    const noActions = action===0;
+
     const any = state.selected.size>0;
-    const actions = actionsCount(state.items);
+    const disabledGlobal = state.loading || state.saving || state.items.length===0;
 
-    // When there's nothing to do today: hide selection links and make the main button look inactive (but keep it visible).
-    if (actions === 0){
-      els.btnSelectAll.parentElement.style.display = "none";
-      els.btnWater.classList.add("inactive");
-      els.btnWater.disabled = false; // looks inactive, but doesn't hard-disable (per UX choice)
-      return;
+    // bottom quick-select links
+    if (els.barlinks) {
+      els.barlinks.style.display = noActions ? "none" : "flex";
     }
+    els.btnSelectAll.disabled = disabledGlobal || noActions;
+    els.btnSelectNeed.disabled = disabledGlobal || noActions;
+    els.btnClear.disabled = disabledGlobal || noActions || !any;
 
-    // Actions exist: show selection links and use normal button style.
-    els.btnSelectAll.parentElement.style.display = "flex";
-    els.btnWater.classList.remove("inactive");
-
-    const disabled = state.loading || state.saving;
-    els.btnWater.disabled = disabled || !any;
-    els.btnSelectAll.disabled = disabled;
-    els.btnSelectNeed.disabled = disabled;
-    els.btnClear.disabled = disabled || !any;
+    // main action button
+    if (noActions) {
+      els.btnWater.classList.add("inactive");
+      els.btnWater.disabled = false; // looks inactive, но не "серый disabled"
+    } else {
+      els.btnWater.classList.remove("inactive");
+      els.btnWater.disabled = disabledGlobal || !any;
+    }
   }
 
   async function loadToday(){
@@ -620,7 +624,11 @@ const state = {
   }
 
   function selectAllToday(){
-    state.items.forEach(it=> state.selected.add(it.id));
+    // только actionable (пора/просрочено/настроить), без "Ок"
+    state.items.forEach(it=>{
+      const st = (it.status || "unknown");
+      if (st==="overdue" || st==="due" || st==="unknown") state.selected.add(it.id);
+    });
     renderToday();
   }
   function selectNeedToday(){
