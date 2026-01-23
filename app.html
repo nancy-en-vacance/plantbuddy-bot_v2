@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>PlantBuddy</title>
   <style>
+
     :root{
       --bg:#F6FBFD;
       --card:#FFFFFF;
@@ -163,63 +164,102 @@
 
     @keyframes shimmer{0%{background-position:200% 0;}100%{background-position:-200% 0;}}
 
-
-
-    /* Clickable pills as filters */
-    button.pill{cursor:pointer;font-family:inherit;color:inherit}
-    button.pill{border:1px solid var(--border);background:#FFFFFF}
-    button.pill:disabled{opacity:.55;cursor:default}
-    .pill.active{border-color:#8FD5A8;box-shadow:0 10px 25px rgba(92,148,110,.18)}
-
-    /* Toast */
-    .toast{
-      position:fixed;
-      left:16px;
-      right:16px;
-      bottom:110px;
-      max-width:520px;
-      margin:0 auto;
-      padding:12px 14px;
-      border-radius:16px;
-      border:1px solid var(--border);
-      background:#FFFFFF;
-      color:var(--text);
-      box-shadow:0 12px 28px rgba(42,45,52,.14);
-      font-weight:800;
-      z-index:50;
-    }
-
     /* Better tap targets in Telegram */
     button, input { -webkit-tap-highlight-color: transparent; }
+  
+
+    /* --- Tabs / Screens --- */
+    .tabs{display:flex;gap:10px;margin:12px 0 10px;flex-wrap:wrap}
+    .tab{border:1px solid var(--border);background:var(--card);color:var(--muted);padding:10px 12px;border-radius:999px;
+      font-weight:700; box-shadow:0 4px 14px rgba(42,45,52,.06); cursor:pointer}
+    .tab.active{color:var(--text);border-color:rgba(48,197,255,.55); box-shadow:0 10px 22px rgba(48,197,255,.14)}
+    .screen{display:none}
+    .screen.active{display:block}
+
+    .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .actions{display:flex;gap:8px;flex-wrap:wrap}
+    .btn2{border:1px solid var(--border);background:#fff;color:var(--text);padding:10px 12px;border-radius:14px;font-weight:700;cursor:pointer}
+    .btn2:disabled{opacity:.6;cursor:default}
+    .btn2.danger{border-color:rgba(214,69,69,.35); color:var(--danger)}
+    .btn2.accent{border-color:rgba(48,197,255,.55)}
+    .mini{font-size:12px;color:var(--muted)}
+    .inputrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .pill{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border);background:var(--card);padding:10px 12px;border-radius:999px;font-weight:700;cursor:pointer}
+    .pill.active{border-color:rgba(48,197,255,.55)}
+    .toast{position:fixed;left:50%;bottom:86px;transform:translateX(-50%);background:#0f172a;color:#fff;
+      padding:10px 12px;border-radius:999px;font-weight:700;box-shadow:0 14px 34px rgba(0,0,0,.25); display:none; z-index:50}
+
   </style>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
+
 <body>
   <div class="wrap">
     <div class="hrow">
-      <div class="hicon">📅</div>
-      <h1>Сегодня</h1>
+      <div class="hicon" id="hicon">📅</div>
+      <h1 id="htitle">Сегодня</h1>
     </div>
     <p class="sub" id="subtitle">Загружаю…</p>
 
-    <div class="stats" id="stats" style="display:none"></div>
-
-    <div class="list" id="list">
-      <div class="skeleton"></div>
-      <div class="skeleton"></div>
-      <div class="skeleton"></div>
+    <div class="tabs" role="tablist">
+      <button class="tab active" id="tabToday">📅Сегодня</button>
+      <button class="tab" id="tabPlants">🪴Растения</button>
+      <button class="tab" id="tabNorms">💦Нормы</button>
     </div>
 
-    <div class="banner">
-      ℹ️Совет по уходу за растениями (доступно только из чат-бота).
-    </div>
+    <!-- SCREEN: TODAY -->
+    <section class="screen active" id="screenToday">
+      <div class="stats" id="stats" style="display:none"></div>
+      <div class="list" id="list">
+        <div class="skeleton"></div>
+        <div class="skeleton"></div>
+        <div class="skeleton"></div>
+      </div>
 
-    <div class="error" id="error" style="display:none"></div>
+      <div class="banner">
+        ℹ️Совет по уходу за растениями (доступно только из чат-бота).
+      </div>
 
-    <div class="toast" id="toast" style="display:none"></div>
+      <div class="error" id="error" style="display:none"></div>
+    </section>
+
+    <!-- SCREEN: PLANTS -->
+    <section class="screen" id="screenPlants">
+      <div class="row" style="margin:2px 0 10px;">
+        <div class="inputrow">
+          <button class="pill active" id="plantsActive">Активные</button>
+          <button class="pill" id="plantsArchived">Архив</button>
+        </div>
+        <button class="btn2 accent" id="btnAddPlant">➕Добавить</button>
+      </div>
+
+      <div class="list" id="plantsList">
+        <div class="skeleton"></div>
+        <div class="skeleton"></div>
+        <div class="skeleton"></div>
+      </div>
+
+      <div class="error" id="plantsError" style="display:none"></div>
+    </section>
+
+    <!-- SCREEN: NORMS -->
+    <section class="screen" id="screenNorms">
+      <div class="row" style="margin:2px 0 10px;">
+        <div class="mini">Норма = раз в N дней (для активных растений)</div>
+        <button class="btn2" id="btnRefreshNorms">Обновить</button>
+      </div>
+
+      <div class="list" id="normsList">
+        <div class="skeleton"></div>
+        <div class="skeleton"></div>
+        <div class="skeleton"></div>
+      </div>
+
+      <div class="error" id="normsError" style="display:none"></div>
+    </section>
   </div>
 
-  <div class="btnbar">
+  <div class="btnbar" id="btnbar">
     <div class="bar">
       <div class="barlinks">
         <button class="linkbtn" id="btnSelectAll" disabled>Выбрать всё</button>
@@ -229,6 +269,8 @@
       <button class="btn" id="btnWater" disabled>✅Отметить полив</button>
     </div>
   </div>
+
+  <div class="toast" id="toast"></div>
 
 <script>
 (function(){
@@ -243,348 +285,528 @@
   const initData = tg ? (tg.initData || "") : "";
 
   const els = {
+    // header
+    hicon: document.getElementById("hicon"),
+    htitle: document.getElementById("htitle"),
     subtitle: document.getElementById("subtitle"),
+    toast: document.getElementById("toast"),
+
+    // tabs
+    tabToday: document.getElementById("tabToday"),
+    tabPlants: document.getElementById("tabPlants"),
+    tabNorms: document.getElementById("tabNorms"),
+
+    // screens
+    screenToday: document.getElementById("screenToday"),
+    screenPlants: document.getElementById("screenPlants"),
+    screenNorms: document.getElementById("screenNorms"),
+
+    // today
     stats: document.getElementById("stats"),
     list: document.getElementById("list"),
     error: document.getElementById("error"),
-    toast: document.getElementById("toast"),
     btnWater: document.getElementById("btnWater"),
     btnSelectAll: document.getElementById("btnSelectAll"),
     btnSelectNeed: document.getElementById("btnSelectNeed"),
     btnClear: document.getElementById("btnClear"),
+    btnbar: document.getElementById("btnbar"),
+
+    // plants
+    plantsActive: document.getElementById("plantsActive"),
+    plantsArchived: document.getElementById("plantsArchived"),
+    plantsList: document.getElementById("plantsList"),
+    plantsError: document.getElementById("plantsError"),
+    btnAddPlant: document.getElementById("btnAddPlant"),
+
+    // norms
+    normsList: document.getElementById("normsList"),
+    normsError: document.getElementById("normsError"),
+    btnRefreshNorms: document.getElementById("btnRefreshNorms"),
   };
 
   const state = {
+    screen: "today", // today|plants|norms
+    // today
     items: [],
     selected: new Set(),
     loading: true,
     saving: false,
-    filter: "all",
+    filter: "all", // all|overdue|due|ok|unknown
+    // plants
+    plants: [],
+    plantsMode: "active", // active|archived
+    plantsLoading: false,
+    // norms
+    norms: [],
+    normsLoading: false,
   };
 
-  function showError(msg){
-    els.error.style.display = "block";
-    els.error.textContent = msg;
-  }
-
-  function clearError(){
-    els.error.style.display = "none";
-    els.error.textContent = "";
-  }
-  function showToast(msg){
-    if (!els.toast) return;
-    els.toast.style.display = "block";
+  function toast(msg){
+    if (!msg) return;
     els.toast.textContent = msg;
-    clearTimeout(showToast._t);
-    showToast._t = setTimeout(()=>{
-      els.toast.style.display = "none";
-      els.toast.textContent = "";
-    }, 2200);
+    els.toast.style.display = "block";
+    clearTimeout(toast._t);
+    toast._t = setTimeout(()=>{ els.toast.style.display = "none"; }, 1800);
   }
 
-  function filterLabel(f){
-    if (f === "overdue") return "Просрочено";
-    if (f === "due") return "Пора";
-    if (f === "ok") return "Ок";
-    if (f === "unknown") return "Нужно настроить";
-    return "Все";
+  function showError(el, msg){
+    el.style.display = "block";
+    el.textContent = msg;
+  }
+  function clearError(el){
+    el.style.display = "none";
+    el.textContent = "";
   }
 
-  function getFilteredItems(){
-    const f = state.filter || "all";
-    if (f === "all") return state.items;
-    return state.items.filter(x => (x.status || "ok") === f);
+  function setScreen(screen){
+    state.screen = screen;
+
+    // screens
+    els.screenToday.classList.toggle("active", screen==="today");
+    els.screenPlants.classList.toggle("active", screen==="plants");
+    els.screenNorms.classList.toggle("active", screen==="norms");
+
+    // tabs
+    els.tabToday.classList.toggle("active", screen==="today");
+    els.tabPlants.classList.toggle("active", screen==="plants");
+    els.tabNorms.classList.toggle("active", screen==="norms");
+
+    // header
+    if (screen==="today"){ els.hicon.textContent="📅"; els.htitle.textContent="Сегодня"; }
+    if (screen==="plants"){ els.hicon.textContent="🪴"; els.htitle.textContent="Растения"; }
+    if (screen==="norms"){ els.hicon.textContent="💦"; els.htitle.textContent="Нормы"; }
+
+    // bottom bar only on today
+    els.btnbar.style.display = screen==="today" ? "block" : "none";
+
+    // subtitle
+    renderSubtitle();
+
+    // lazy load
+    if (screen==="plants" && state.plants.length===0) loadPlants();
+    if (screen==="norms" && state.norms.length===0) loadNorms();
   }
 
+  function renderSubtitle(){
+    if (state.screen==="today"){
+      const total = state.items.length;
+      const sel = state.selected.size;
+      const f = state.filter==="all" ? "Все" :
+                state.filter==="overdue" ? "Просрочено" :
+                state.filter==="due" ? "Пора" :
+                state.filter==="ok" ? "Ок" : "Настроить";
+      els.subtitle.textContent = `Растений: ${total} · Выбрано: ${sel} · Фильтр: ${f}`;
+      return;
+    }
+    if (state.screen==="plants"){
+      els.subtitle.textContent = state.plantsMode==="active" ? "Активные растения" : "Архивные растения";
+      return;
+    }
+    if (state.screen==="norms"){
+      els.subtitle.textContent = "Просмотр и настройка норм полива";
+      return;
+    }
+  }
 
   function apiFetch(path, opts){
     opts = opts || {};
     opts.headers = Object.assign({}, opts.headers || {}, {
-      "X-Telegram-InitData": initData,
       "Content-Type": "application/json",
+      "X-Telegram-InitData": initData
     });
-    return fetch(path, opts);
+    return fetch(path, opts).then(async (res)=>{
+      const text = await res.text();
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; } catch(e){}
+      if (!res.ok){
+        const msg = (data && (data.detail || data.message)) || `HTTP ${res.status}`;
+        throw new Error(msg);
+      }
+      return data;
+    });
   }
 
-  function statusTag(s){
-    // expected: overdue / due / ok / unknown
-    if (s === "overdue") return {cls:"overdue", label:"Просрочено"};
-    if (s === "due") return {cls:"due", label:"Пора"};
-    if (s === "unknown") return {cls:"unknown", label:"Нужно настроить"};
-    return {cls:"ok", label:"Ок"};
+  // -------- TODAY --------
+  function statusCounts(items){
+    const c = {overdue:0, due:0, ok:0, unknown:0, all: items.length};
+    for (const it of items){
+      const s = it.status || "unknown";
+      if (c[s] !== undefined) c[s] += 1;
+      else c.unknown += 1;
+    }
+    return c;
   }
 
-  function fmtDays(n){
-    const abs = Math.abs(n);
-    const d = abs % 10;
-    const dd = abs % 100;
-    if (dd >= 11 && dd <= 14) return abs + "дн.";
-    if (d === 1) return abs + "дн.";
-    if (d >= 2 && d <= 4) return abs + "дн.";
-    return abs + "дн.";
+  function renderStats(){
+    if (!state.items.length){
+      els.stats.style.display="none";
+      els.stats.innerHTML="";
+      return;
+    }
+    const c = statusCounts(state.items);
+    const chips = [
+      {k:"all", label:"Все", cls:""},
+      {k:"overdue", label:`Просрочено: ${c.overdue}`, cls:"danger"},
+      {k:"due", label:`Пора: ${c.due}`, cls:"warn"},
+      {k:"ok", label:`Ок: ${c.ok}`, cls:"ok"},
+      {k:"unknown", label:`Настроить: ${c.unknown}`, cls:"neutral"},
+    ];
+    els.stats.innerHTML = chips.map(ch=>{
+      const active = (state.filter===ch.k) ? "active" : "";
+      return `<button class="chip ${ch.cls} ${active}" data-filter="${ch.k}">${ch.label}</button>`;
+    }).join("");
+    els.stats.style.display="flex";
+
+    // bind
+    els.stats.querySelectorAll("[data-filter]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        state.filter = btn.getAttribute("data-filter") || "all";
+        renderToday();
+      });
+    });
   }
 
-  function selectionCount(){
-    return state.selected.size;
+  function renderToday(){
+    clearError(els.error);
+    renderStats();
+
+    const items = state.items.filter(it => state.filter==="all" ? true : (it.status||"unknown")===state.filter);
+
+    if (!items.length){
+      els.list.innerHTML = `<div class="empty">По фильтру ничего нет.</div>`;
+    } else {
+      els.list.innerHTML = items.map(it=>{
+        const checked = state.selected.has(it.id);
+        const status = it.status || "unknown";
+        const badgeText = status==="overdue" ? "Просрочено" :
+                          status==="due" ? "Пора" :
+                          status==="ok" ? (it.due_in_days!=null ? `Через ${it.due_in_days}д` : "Ок") :
+                          "Настроить";
+        const meta1 = it.days_since_last_watering==null ? "Полив: нет данных" : `Полив: ${it.days_since_last_watering}д назад`;
+        const meta2 = it.norm_days==null ? "норма: —" : `норма: ${it.norm_days}д`;
+        return `
+          <button class="card ${checked ? "selected" : ""}" data-id="${it.id}">
+            <div class="top">
+              <div class="name">${escapeHtml(it.name || "")}</div>
+              <span class="badge ${status}">${badgeText}</span>
+            </div>
+            <div class="meta">${meta1}<span class="dot">•</span>${meta2}</div>
+          </button>
+        `;
+      }).join("");
+    }
+
+    // card clicks
+    els.list.querySelectorAll("[data-id]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const id = Number(btn.getAttribute("data-id"));
+        if (!id) return;
+        if (state.selected.has(id)) state.selected.delete(id);
+        else state.selected.add(id);
+        renderToday();
+        updateButtons();
+      });
+    });
+
+    renderSubtitle();
+    updateButtons();
   }
 
   function updateButtons(){
-    const hasItems = !state.loading && state.items.length > 0;
-    const sel = selectionCount();
-
-    els.btnWater.disabled = state.loading || state.saving || sel === 0;
-    els.btnSelectAll.disabled = state.loading || state.saving || !hasItems;
-    els.btnSelectNeed.disabled = state.loading || state.saving || !hasItems;
-    els.btnClear.disabled = state.loading || state.saving || sel === 0;
-
-    els.btnWater.textContent = state.saving ? "Отмечаю…" : "✅Отметить полив";
+    const any = state.selected.size>0;
+    const disabled = state.loading || state.saving || state.items.length===0;
+    els.btnWater.disabled = disabled || !any;
+    els.btnSelectAll.disabled = disabled;
+    els.btnSelectNeed.disabled = disabled;
+    els.btnClear.disabled = disabled || !any;
   }
 
-  els.stats.addEventListener("click", (e)=>{
-    const btn = e.target && e.target.closest ? e.target.closest("[data-filter]") : null;
-    if (!btn || state.loading || state.saving) return;
-    const f = btn.getAttribute("data-filter") || "all";
-    state.filter = f;
-    // when filter changes, keep selection but update counters/text
-    render();
-  });
-
-  function render(){
-    // subtitle
-    if (state.loading){
-      els.subtitle.textContent = "Загружаю…";
-    } else {
-      const total = state.items.length;
-      const sel = selectionCount();
-      els.subtitle.textContent = total
-        ? `Растений: ${total} · Выбрано: ${sel} · Фильтр: ${filterLabel(state.filter)}`
-        : "Пока нет растений. Добавь их в боте через /add_plant";
-    }
-
-    // stats
-    if (!state.loading && state.items.length){
-      const counts = {overdue:0, due:0, ok:0, unknown:0};
-      for (const it of state.items){
-        const k = it.status || "ok";
-        counts[k] = (counts[k] || 0) + 1;
-      }
-      const totalAll = (counts.overdue||0) + (counts.due||0) + (counts.ok||0) + (counts.unknown||0);
-      els.stats.innerHTML = `
-        <button type="button" class="pill ${state.filter==='all'?'active':''}" data-filter="all">📋Все: ${totalAll}</button>
-        <button type="button" class="pill ${state.filter==='overdue'?'active':''}" data-filter="overdue">🥲Просрочено: ${counts.overdue||0}</button>
-        <button type="button" class="pill ${state.filter==='due'?'active':''}" data-filter="due">⏰Пора: ${counts.due||0}</button>
-        <button type="button" class="pill ${state.filter==='ok'?'active':''}" data-filter="ok">✅Ок: ${counts.ok||0}</button>
-        <button type="button" class="pill ${state.filter==='unknown'?'active':''}" data-filter="unknown">ℹ️Настроить: ${counts.unknown||0}</button>
-      `;
-      els.stats.style.display = "flex";
-    } else {
-      els.stats.style.display = "none";
-    }
-
-    // list
-    els.list.innerHTML = "";
-    if (state.loading){
-      for (let i=0;i<3;i++){
-        const sk = document.createElement("div");
-        sk.className = "skeleton";
-        els.list.appendChild(sk);
-      }
-    } else if (!state.items.length){
-      const empty = document.createElement("div");
-      empty.className = "banner";
-      empty.textContent = "Тут пока пусто. Добавь растения в боте через /add_plant.";
-      els.list.appendChild(empty);
-    } else {
-      const filtered = getFilteredItems();
-
-      if (!filtered.length){
-        const empty = document.createElement("div");
-        empty.className = "banner";
-        empty.textContent = "По фильтру ничего нет.";
-        els.list.appendChild(empty);
-        updateButtons();
-        return;
-      }
-
-      for (const it of filtered){
-        const card = document.createElement("div");
-        card.className = "card";
-
-        const cb = document.createElement("input");
-        cb.type = "checkbox";
-        cb.className = "check";
-        cb.checked = state.selected.has(it.id);
-
-        cb.addEventListener("change", ()=>{
-          if (cb.checked) state.selected.add(it.id);
-          else state.selected.delete(it.id);
-          updateButtons();
-          // refresh subtitle only
-          if (!state.loading) {
-            const total = state.items.length;
-            const sel = selectionCount();
-            els.subtitle.textContent = total ? `Растений: ${total} · Выбрано: ${sel} · Фильтр: ${filterLabel(state.filter)}` : els.subtitle.textContent;
-          }
-        });
-
-        const meta = document.createElement("div");
-        meta.className = "meta";
-
-        const t = document.createElement("div");
-        t.className = "title";
-        t.textContent = it.name;
-
-        const row = document.createElement("div");
-        row.className = "row";
-        const tag = statusTag(it.status);
-
-        const st = document.createElement("span");
-        st.className = `tag ${tag.cls}`;
-        st.textContent = tag.label;
-
-        const n = document.createElement("span");
-        n.className = "tag";
-        n.textContent = it.norm_days ? `Норма: ${it.norm_days}дн` : "Норма: — ";
-
-        row.appendChild(st);
-        row.appendChild(n);
-
-        const small = document.createElement("div");
-        small.className = "small";
-        const parts = [];
-        if (it.days_since_last_watering !== null && it.days_since_last_watering !== undefined){
-          parts.push(`Последний полив: ${fmtDays(it.days_since_last_watering)} назад`);
-        } else {
-          parts.push("Последний полив: — ");
-        }
-        if (it.due_in_days !== null && it.due_in_days !== undefined){
-          if (it.due_in_days < 0) parts.push(`Просрочка: ${fmtDays(it.due_in_days)}`);
-          else if (it.due_in_days === 0) parts.push("Пора сегодня");
-          else parts.push(`До полива: ${fmtDays(it.due_in_days)}`);
-        }
-        small.textContent = parts.join(" · ");
-
-        meta.appendChild(t);
-        meta.appendChild(row);
-        meta.appendChild(small);
-
-        card.appendChild(cb);
-        card.appendChild(meta);
-
-        // tap anywhere toggles checkbox
-        card.addEventListener("click", (e)=>{
-          if (e.target === cb) return;
-          cb.checked = !cb.checked;
-          cb.dispatchEvent(new Event("change"));
-        });
-
-        els.list.appendChild(card);
-      }
-    }
-
-    updateButtons();
-  }
-
-  async function load(){
+  async function loadToday(){
     state.loading = true;
-    state.saving = false;
-    clearError();
-    render();
-
-    if (!initData){
-      state.loading = false;
-      render();
-      showError("Похоже, страница открыта не из Telegram.\nОткрой Mini App из чата с ботом PlantBuddy.");
-      return;
-    }
-
-    try{
-      const r = await apiFetch("/api/today", { method: "GET" });
-      const j = await r.json().catch(()=> ({}));
-      if (!r.ok){
-        throw new Error(JSON.stringify(j));
-      }
-
-      state.items = (j.items || []).map(x => ({
-        id: x.id,
-        name: x.name,
-        status: x.status || "ok",
-        norm_days: x.norm_days ?? null,
-        days_since_last_watering: x.days_since_last_watering ?? null,
-        due_in_days: x.due_in_days ?? null,
-      }));
-
-      // Sort: overdue -> due -> unknown -> ok
-      const order = {overdue:0, due:1, unknown:2, ok:3};
-      state.items.sort((a,b)=> (order[a.status] ?? 9) - (order[b.status] ?? 9));
-
-      state.loading = false;
-      render();
-    } catch(e){
-      state.loading = false;
-      render();
-      showError("Ошибка загрузки: " + String(e && e.message ? e.message : e));
-    }
-  }
-
-  function selectAll(){
-    state.selected = new Set(state.items.map(x => x.id));
-    render();
-  }
-
-  function selectNeed(){
-    const need = state.items.filter(x => x.status === "due" || x.status === "overdue");
-    state.selected = new Set(need.map(x => x.id));
-    render();
-  }
-
-  function clearSelection(){
-    state.selected.clear();
-    render();
-  }
-
-  els.btnSelectAll.addEventListener("click", ()=>{
-    if (state.loading || state.saving) return;
-    selectAll();
-  });
-
-  els.btnSelectNeed.addEventListener("click", ()=>{
-    if (state.loading || state.saving) return;
-    selectNeed();
-  });
-
-  els.btnClear.addEventListener("click", ()=>{
-    if (state.loading || state.saving) return;
-    clearSelection();
-  });
-
-  els.btnWater.addEventListener("click", async ()=>{
-    if (selectionCount() === 0 || state.loading || state.saving) return;
-
-    state.saving = true;
-    clearError();
+    state.items = [];
+    state.selected = new Set();
+    state.filter = "all";
     updateButtons();
+    els.list.innerHTML = `<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>`;
+    els.stats.style.display="none";
+    renderSubtitle();
 
     try{
-      const body = { plant_ids: Array.from(state.selected) };
-      const r = await apiFetch("/api/water", { method: "POST", body: JSON.stringify(body) });
-      const j = await r.json().catch(()=> ({}));
-      if (!r.ok){
-        throw new Error(JSON.stringify(j));
-      }
-      const updated = (j && typeof j.updated === "number") ? j.updated : body.plant_ids.length;
-      showToast(`✅Полив отмечен: ${updated}`);
-      state.selected.clear();
-      await load();
-    } catch(e){
+      const data = await apiFetch("/api/today", {method:"GET"});
+      state.items = Array.isArray(data.items) ? data.items : [];
+      state.loading = false;
+      renderToday();
+    }catch(e){
+      state.loading = false;
+      showError(els.error, e && e.message ? e.message : "Ошибка загрузки");
+      els.list.innerHTML = `<div class="empty">Не удалось загрузить данные.</div>`;
+      updateButtons();
+      renderSubtitle();
+    }
+  }
+
+  async function markWatered(){
+    if (state.saving || state.selected.size===0) return;
+    state.saving = true;
+    updateButtons();
+    clearError(els.error);
+    try{
+      const ids = Array.from(state.selected);
+      const res = await apiFetch("/api/water", {method:"POST", body: JSON.stringify({plant_ids: ids})});
+      toast(`✅Полив отмечен: ${res && res.updated!=null ? res.updated : ids.length}`);
+      await loadToday();
+    }catch(e){
+      showError(els.error, e && e.message ? e.message : "Ошибка сохранения");
       state.saving = false;
       updateButtons();
-      showError("Ошибка отметки: " + String(e && e.message ? e.message : e));
+    }finally{
+      state.saving = false;
+      updateButtons();
     }
-  });
+  }
 
-  load();
+  function selectAllToday(){
+    state.items.forEach(it=> state.selected.add(it.id));
+    renderToday();
+  }
+  function selectNeedToday(){
+    state.items.forEach(it=>{
+      const s = it.status || "unknown";
+      if (s==="due" || s==="overdue") state.selected.add(it.id);
+    });
+    renderToday();
+  }
+  function clearSelection(){
+    state.selected.clear();
+    renderToday();
+  }
+
+  // -------- PLANTS --------
+  function renderPlants(){
+    clearError(els.plantsError);
+
+    if (state.plantsLoading){
+      els.plantsList.innerHTML = `<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>`;
+      return;
+    }
+    if (!state.plants.length){
+      els.plantsList.innerHTML = `<div class="empty">${state.plantsMode==="active" ? "Нет активных растений." : "Архив пуст."}</div>`;
+      return;
+    }
+    els.plantsList.innerHTML = state.plants.map(p=>{
+      const norm = p.water_every_days==null ? "норма: —" : `норма: ${p.water_every_days}д`;
+      const lw = p.last_watered_at ? `посл.полив: ${formatDate(p.last_watered_at)}` : "посл.полив: —";
+      const right = state.plantsMode==="active"
+        ? `<button class="btn2" data-act="rename" data-id="${p.id}">✏️Переименовать</button>
+           <button class="btn2" data-act="norm" data-id="${p.id}">💦Норма</button>
+           <button class="btn2 danger" data-act="archive" data-id="${p.id}">🗄️Архив</button>`
+        : `<button class="btn2 accent" data-act="restore" data-id="${p.id}">↩️Восстановить</button>`;
+      return `
+        <div class="card" style="cursor:default">
+          <div class="top">
+            <div class="name">${escapeHtml(p.name || "")}</div>
+            <span class="badge neutral">${norm}</span>
+          </div>
+          <div class="meta">${lw}</div>
+          <div class="actions" style="margin-top:10px">${right}</div>
+        </div>
+      `;
+    }).join("");
+
+    els.plantsList.querySelectorAll("[data-act]").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        const act = btn.getAttribute("data-act");
+        const id = Number(btn.getAttribute("data-id"));
+        if (!id) return;
+
+        try{
+          if (act==="rename"){
+            const cur = state.plants.find(x=>x.id===id);
+            const name = prompt("Новое имя растения:", cur ? cur.name : "");
+            if (!name) return;
+            await apiFetch(`/api/plants/${id}`, {method:"PATCH", body: JSON.stringify({name})});
+            toast("✅Переименовано");
+            await loadPlants();
+          }
+          if (act==="norm"){
+            const cur = state.plants.find(x=>x.id===id);
+            const v = prompt("Норма полива (в днях). Пусто = убрать норму.", cur && cur.water_every_days!=null ? String(cur.water_every_days) : "");
+            if (v === null) return;
+            const days = v.trim()==="" ? null : Number(v);
+            if (days !== null && (!Number.isFinite(days) || days<=0 || days>365)) { alert("Введи число 1–365"); return; }
+            await apiFetch(`/api/plants/${id}/norm`, {method:"PATCH", body: JSON.stringify({days})});
+            toast("✅Норма сохранена");
+            await loadPlants();
+          }
+          if (act==="archive"){
+            if (!confirm("Убрать растение в архив?")) return;
+            await apiFetch(`/api/plants/${id}/archive`, {method:"POST"});
+            toast("🗄️В архиве");
+            await loadPlants();
+          }
+          if (act==="restore"){
+            await apiFetch(`/api/plants/${id}/restore`, {method:"POST"});
+            toast("✅Восстановлено");
+            await loadPlants();
+          }
+        }catch(e){
+          showError(els.plantsError, e && e.message ? e.message : "Ошибка");
+        }
+      });
+    });
+  }
+
+  async function loadPlants(){
+    state.plantsLoading = true;
+    renderPlants();
+    try{
+      const q = state.plantsMode==="active" ? "true" : "false";
+      const data = await apiFetch(`/api/plants?active=${q}`, {method:"GET"});
+      state.plants = Array.isArray(data.items) ? data.items : [];
+      state.plantsLoading = false;
+      renderPlants();
+    }catch(e){
+      state.plantsLoading = false;
+      showError(els.plantsError, e && e.message ? e.message : "Ошибка загрузки");
+      renderPlants();
+    }
+    renderSubtitle();
+  }
+
+  async function addPlant(){
+    const name = prompt("Название растения:");
+    if (!name) return;
+    clearError(els.plantsError);
+    try{
+      await apiFetch(`/api/plants`, {method:"POST", body: JSON.stringify({name})});
+      toast("✅Добавлено");
+      await loadPlants();
+    }catch(e){
+      showError(els.plantsError, e && e.message ? e.message : "Ошибка добавления");
+    }
+  }
+
+  // -------- NORMS --------
+  function renderNorms(){
+    clearError(els.normsError);
+    if (state.normsLoading){
+      els.normsList.innerHTML = `<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>`;
+      return;
+    }
+    if (!state.norms.length){
+      els.normsList.innerHTML = `<div class="empty">Нет растений с заданной нормой.</div>`;
+      return;
+    }
+    els.normsList.innerHTML = state.norms.map(p=>{
+      return `
+        <div class="card" style="cursor:default">
+          <div class="top">
+            <div class="name">${escapeHtml(p.name || "")}</div>
+            <span class="badge ok">${p.water_every_days}д</span>
+          </div>
+          <div class="actions" style="margin-top:10px">
+            <button class="btn2" data-act="edit" data-id="${p.id}">✏️Изменить</button>
+            <button class="btn2 danger" data-act="clear" data-id="${p.id}">🧹Убрать норму</button>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    els.normsList.querySelectorAll("[data-act]").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        const act = btn.getAttribute("data-act");
+        const id = Number(btn.getAttribute("data-id"));
+        if (!id) return;
+        try{
+          if (act==="edit"){
+            const cur = state.norms.find(x=>x.id===id);
+            const v = prompt("Новая норма (в днях):", cur ? String(cur.water_every_days) : "");
+            if (v === null) return;
+            const days = Number(v);
+            if (!Number.isFinite(days) || days<=0 || days>365) { alert("Введи число 1–365"); return; }
+            await apiFetch(`/api/plants/${id}/norm`, {method:"PATCH", body: JSON.stringify({days})});
+            toast("✅Норма обновлена");
+            await loadNorms();
+          }
+          if (act==="clear"){
+            if (!confirm("Убрать норму?")) return;
+            await apiFetch(`/api/plants/${id}/norm`, {method:"PATCH", body: JSON.stringify({days: null})});
+            toast("✅Норма убрана");
+            await loadNorms();
+          }
+        }catch(e){
+          showError(els.normsError, e && e.message ? e.message : "Ошибка");
+        }
+      });
+    });
+  }
+
+  async function loadNorms(){
+    state.normsLoading = true;
+    renderNorms();
+    try{
+      const data = await apiFetch(`/api/norms`, {method:"GET"});
+      state.norms = Array.isArray(data.items) ? data.items : [];
+      state.normsLoading = false;
+      renderNorms();
+    }catch(e){
+      state.normsLoading = false;
+      showError(els.normsError, e && e.message ? e.message : "Ошибка загрузки");
+      renderNorms();
+    }
+    renderSubtitle();
+  }
+
+  // helpers
+  function escapeHtml(str){
+    return String(str||"").replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+  }
+  function formatDate(iso){
+    try{
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return "—";
+      const dd = String(d.getDate()).padStart(2,'0');
+      const mm = String(d.getMonth()+1).padStart(2,'0');
+      const yy = String(d.getFullYear()).slice(-2);
+      return `${dd}.${mm}.${yy}`;
+    }catch(e){ return "—"; }
+  }
+
+  // bindings
+  els.tabToday.addEventListener("click", ()=>setScreen("today"));
+  els.tabPlants.addEventListener("click", ()=>setScreen("plants"));
+  els.tabNorms.addEventListener("click", ()=>setScreen("norms"));
+
+  els.btnWater.addEventListener("click", markWatered);
+  els.btnSelectAll.addEventListener("click", selectAllToday);
+  els.btnSelectNeed.addEventListener("click", selectNeedToday);
+  els.btnClear.addEventListener("click", clearSelection);
+
+  els.plantsActive.addEventListener("click", ()=>{
+    state.plantsMode="active";
+    els.plantsActive.classList.add("active");
+    els.plantsArchived.classList.remove("active");
+    loadPlants();
+  });
+  els.plantsArchived.addEventListener("click", ()=>{
+    state.plantsMode="archived";
+    els.plantsArchived.classList.add("active");
+    els.plantsActive.classList.remove("active");
+    loadPlants();
+  });
+  els.btnAddPlant.addEventListener("click", addPlant);
+
+  els.btnRefreshNorms.addEventListener("click", loadNorms);
+
+  // init
+  if (!initData){
+    // For local browser usage (non-TG). We still allow UI to render; API may reject.
+    toast("ℹ️Открой из Telegram для полного доступа");
+  }
+
+  loadToday();
 })();
 </script>
 </body>
+
 </html>
