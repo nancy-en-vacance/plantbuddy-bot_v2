@@ -1,845 +1,175 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PlantBuddy</title>
   <style>
-
-    :root{
-      --bg:#F6FBFD;
-      --card:#FFFFFF;
-      --text:#2A2D34;
-      --muted:#4B5563;
-      --border:#D7E2E8;
-      --accent:#30C5FF;
-      --accent2:#5C946E;
-      --danger:#D64545;
-      --warn:#C57F1E;
-      --shadow:0 10px 30px rgba(42,45,52,.10);
-      --radius:18px;
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: #0b0d11;
+      color: #e9eef7;
     }
 
-    html,body{height:100%;}
-    body{
-      margin:0;
-      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Ubuntu,"Helvetica Neue",Arial,"Noto Sans",sans-serif;
-      background:var(--bg);
-      color:var(--text);
+    .container {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 16px 16px 120px;
     }
 
-    .wrap{max-width:520px;margin:0 auto;padding:18px 16px 120px;}
-
-    /* Header */
-    .hrow{display:flex;align-items:center;gap:10px;margin-top:8px;}
-    .hicon{width:42px;height:42px;border-radius:14px;display:flex;align-items:center;justify-content:center;background:#fff;border:1px solid var(--border);box-shadow:0 4px 14px rgba(42,45,52,.06);}
-    h1{margin:0;font-size:30px;font-weight:900;letter-spacing:-0.02em;}
-    .sub{margin:8px 0 0;color:var(--muted);}
-
-    /* Stats */
-    .stats{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;}
-    .pill{
-      display:inline-flex;align-items:center;gap:8px;
-      padding:8px 10px;
-      border:1px solid var(--border);
-      border-radius:999px;
-      background:#FFFFFF;
-      box-shadow:0 2px 10px rgba(42,45,52,.06);
-      font-weight:700;
-      font-size:13px;
+    .header {
+      font-weight: 700;
+      font-size: 18px;
+      margin-bottom: 12px;
     }
 
-    /* List */
-    .list{margin-top:16px;display:flex;flex-direction:column;gap:12px;}
-
-    .card{
-      display:flex;gap:12px;align-items:flex-start;
-      padding:14px;
-      border:1px solid var(--border);
-      border-radius:var(--radius);
-      background:var(--card);
-      box-shadow:0 8px 24px rgba(42,45,52,.08);
-      cursor:pointer;
-      user-select:none;
-    }
-    .card:active{transform:translateY(1px);}
-
-    .check{width:22px;height:22px;margin-top:4px;accent-color:var(--accent2);}
-
-    .meta{flex:1;min-width:0;}
-    .title{font-weight:800;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-
-    .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
-
-    .tag{
-      display:inline-flex;align-items:center;justify-content:center;
-      padding:4px 10px;
-      border-radius:999px;
-      border:1px solid var(--border);
-      background:#F8FAFC;
-      color:var(--text);
-      font-size:13px;
-      font-weight:700;
-    }
-    .tag.ok{background:#EAF6EF;border-color:#CFE6D7;color:var(--accent2);}
-    .tag.due{background:#FFF3E0;border-color:#F6D7A8;color:var(--warn);}
-    .tag.overdue{background:#FDECEC;border-color:#F4C7C7;color:var(--danger);}
-    .tag.unknown{background:#F3F4F6;border-color:#E5E7EB;color:#6B7280;}
-
-    .small{margin-top:8px;color:var(--muted);font-size:13px;line-height:1.35;}
-
-    .banner{
-      margin-top:12px;
-      padding:14px;
-      border-radius:var(--radius);
-      border:1px solid var(--border);
-      background:#FFFFFF;
-      color:var(--muted);
-      box-shadow:0 6px 18px rgba(42,45,52,.06);
+    .stats {
+      font-size: 13px;
+      color: #9aa6b2;
+      margin-bottom: 12px;
     }
 
-    .error{
-      margin-top:12px;
-      padding:12px 14px;
-      border-radius:var(--radius);
-      border:1px solid #F4C7C7;
-      background:#FDECEC;
-      color:var(--danger);
-      white-space:pre-wrap;
+    .empty {
+      text-align: center;
+      color: #9aa6b2;
+      margin-top: 48px;
     }
 
-    /* Bottom bar */
-    .btnbar{
-      position:fixed;left:0;right:0;bottom:0;
-      padding:12px 16px 18px;
-      background:linear-gradient(to top, var(--bg) 70%, rgba(246,251,253,0));
+    .card {
+      background: #11141b;
+      border-radius: 16px;
+      padding: 12px;
+      margin-bottom: 10px;
+      border: 1px solid #232a36;
     }
 
-    .bar{
-      width:min(520px, calc(100vw - 32px));
-      margin:0 auto;
+    .card-title {
+      font-weight: 700;
+      margin-bottom: 4px;
     }
 
-    .barlinks{
-      display:flex;justify-content:space-between;gap:12px;
-      margin-bottom:10px;
-      flex-wrap:wrap;
+    .card-meta {
+      font-size: 13px;
+      color: #9aa6b2;
     }
 
-    .linkbtn{
-      border:none;
-      background:transparent;
-      color:var(--muted);
-      font-weight:800;
-      font-size:13px;
-      padding:0;
-      text-decoration:underline;
-      cursor:pointer;
-    }
-    .linkbtn:disabled{opacity:.55;cursor:default;}
-
-    .btn{
-      width:100%;
-      display:block;
-      border:none;
-      border-radius:16px;
-      padding:16px 18px;
-      font-weight:900;
-      font-size:16px;
-      color:#0A1B22;
-      background:var(--accent);
-      box-shadow:0 10px 25px rgba(48,197,255,.25);
-      cursor:pointer;
-    }
-    .btn:disabled{opacity:.55;box-shadow:none;cursor:default;}
-
-    .skeleton{
-      height:74px;
-      border-radius:var(--radius);
-      border:1px solid var(--border);
-      background:linear-gradient(90deg, #FFFFFF, #F2F7FA, #FFFFFF);
-      background-size:200% 100%;
-      animation:shimmer 1.2s linear infinite;
+    .footer {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(11,13,17,0.95);
+      border-top: 1px solid #232a36;
+      padding: 12px 16px;
     }
 
-    @keyframes shimmer{0%{background-position:200% 0;}100%{background-position:-200% 0;}}
+    .footer-actions {
+      display: none;
+      font-size: 13px;
+      color: #9aa6b2;
+      margin-bottom: 8px;
+      gap: 12px;
+    }
 
-    /* Better tap targets in Telegram */
-    button, input { -webkit-tap-highlight-color: transparent; }
-  
+    .footer-actions span {
+      text-decoration: underline;
+      cursor: pointer;
+    }
 
-    /* --- Tabs / Screens --- */
-    .tabs{display:flex;gap:10px;margin:12px 0 10px;flex-wrap:wrap}
-    .tab{border:1px solid var(--border);background:var(--card);color:var(--muted);padding:10px 12px;border-radius:999px;
-      font-weight:700; box-shadow:0 4px 14px rgba(42,45,52,.06); cursor:pointer}
-    .tab.active{color:var(--text);border-color:rgba(48,197,255,.55); box-shadow:0 10px 22px rgba(48,197,255,.14)}
-    .screen{display:none}
-    .screen.active{display:block}
+    .btn-primary {
+      width: 100%;
+      padding: 14px;
+      border-radius: 14px;
+      font-size: 15px;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+    }
 
-    .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
-    .actions{display:flex;gap:8px;flex-wrap:wrap}
-    .btn2{border:1px solid var(--border);background:#fff;color:var(--text);padding:10px 12px;border-radius:14px;font-weight:700;cursor:pointer}
-    .btn2:disabled{opacity:.6;cursor:default}
-    .btn2.danger{border-color:rgba(214,69,69,.35); color:var(--danger)}
-    .btn2.accent{border-color:rgba(48,197,255,.55)}
-    .mini{font-size:12px;color:var(--muted)}
-    .inputrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-    .pill{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border);background:var(--card);padding:10px 12px;border-radius:999px;font-weight:700;cursor:pointer}
-    
-    .pill.passive{opacity:.75;cursor:default;pointer-events:none}
-.pill.active{border-color:rgba(48,197,255,.55)}
-    .toast{position:fixed;left:50%;bottom:86px;transform:translateX(-50%);background:#0f172a;color:#fff;
-      padding:10px 12px;border-radius:999px;font-weight:700;box-shadow:0 14px 34px rgba(0,0,0,.25); display:none; z-index:50}
+    .btn-active {
+      background: #7dd3fc;
+      color: #000;
+    }
 
+    .btn-inactive {
+      background: #e5e7eb;
+      color: #4b5563;
+    }
   </style>
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
-
 <body>
-  <div class="wrap">
-    <div class="hrow">
-      <div class="hicon" id="hicon">📅</div>
-      <h1 id="htitle">Сегодня</h1>
-    </div>
-    <p class="sub" id="subtitle">Загружаю…</p>
 
-    <div class="tabs" role="tablist">
-      <button class="tab active" id="tabToday">📅Сегодня</button>
-      <button class="tab" id="tabPlants">🪴Растения</button>
-      <button class="tab" id="tabNorms">💦Нормы</button>
-    </div>
+<div class="container">
+  <div class="header">Сегодня</div>
+  <div id="stats" class="stats"></div>
 
-    <!-- SCREEN: TODAY -->
-    <section class="screen active" id="screenToday">
-      <div class="stats" id="stats" style="display:none"></div>
-      <div class="list" id="list">
-        <div class="skeleton"></div>
-        <div class="skeleton"></div>
-        <div class="skeleton"></div>
-      </div>
+  <div id="list"></div>
 
-      <div class="banner" id="adviceBanner">
-        ℹ️Совет по уходу за растениями (доступно только из чат-бота).
-      </div>
+  <div id="empty" class="empty" style="display:none;">
+    Сегодня всё ок 🌿
+  </div>
+</div>
 
-      <div class="error" id="error" style="display:none"></div>
-    </section>
-
-    <!-- SCREEN: PLANTS -->
-    <section class="screen" id="screenPlants">
-      <div class="row" style="margin:2px 0 10px;">
-        <div class="inputrow">
-          <button class="pill active" id="plantsActive">Активные</button>
-          <button class="pill" id="plantsArchived">Архив</button>
-        </div>
-        <button class="btn2 accent" id="btnAddPlant">➕Добавить</button>
-      </div>
-
-      <div class="list" id="plantsList">
-        <div class="skeleton"></div>
-        <div class="skeleton"></div>
-        <div class="skeleton"></div>
-      </div>
-
-      <div class="error" id="plantsError" style="display:none"></div>
-    </section>
-
-    <!-- SCREEN: NORMS -->
-    <section class="screen" id="screenNorms">
-      <div class="row" style="margin:2px 0 10px;">
-        <div class="mini">Норма = раз в N дней (для активных растений)</div>
-        <button class="btn2" id="btnRefreshNorms">Обновить</button>
-      </div>
-
-      <div class="list" id="normsList">
-        <div class="skeleton"></div>
-        <div class="skeleton"></div>
-        <div class="skeleton"></div>
-      </div>
-
-      <div class="error" id="normsError" style="display:none"></div>
-    </section>
+<div class="footer">
+  <div id="footerActions" class="footer-actions">
+    <span>Выбрать всё</span>
+    <span>Выбрать: пора + просрочено</span>
+    <span>Сбросить</span>
   </div>
 
-  <div class="btnbar" id="btnbar">
-    <div class="bar">
-      <div class="barlinks">
-        <button class="linkbtn" id="btnSelectAll" disabled>Выбрать всё</button>
-        <button class="linkbtn" id="btnSelectNeed" disabled>Выбрать: пора + просрочено</button>
-        <button class="linkbtn" id="btnClear" disabled>Сбросить</button>
-      </div>
-      <button class="btn" id="btnWater" disabled>✅Отметить полив</button>
-    </div>
-  </div>
-
-  <div class="toast" id="toast"></div>
+  <button id="waterBtn" class="btn-primary btn-inactive">
+    Отметить полив
+  </button>
+</div>
 
 <script>
-(function(){
-  const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
-  if (tg) {
-    tg.ready();
-    try { tg.expand(); } catch(e){}
-    try { tg.setHeaderColor('#A0DDE6'); } catch(e){}
-    try { tg.setBackgroundColor('#F6FBFD'); } catch(e){}
+  // ===== feature flags =====
+  const FEATURE_ADVICE_BANNER = false;
+
+  // ===== mock state (заменяется реальными данными из API) =====
+  const items = []; // <-- сюда приходят растения "пора / просрочено"
+
+  const statsEl = document.getElementById("stats");
+  const listEl = document.getElementById("list");
+  const emptyEl = document.getElementById("empty");
+  const waterBtn = document.getElementById("waterBtn");
+  const footerActions = document.getElementById("footerActions");
+
+  function render() {
+    statsEl.textContent = `Действий: ${items.length}`;
+
+    listEl.innerHTML = "";
+
+    if (items.length === 0) {
+      emptyEl.style.display = "block";
+      footerActions.style.display = "none";
+      waterBtn.className = "btn-primary btn-inactive";
+      return;
+    }
+
+    emptyEl.style.display = "none";
+    footerActions.style.display = "flex";
+    waterBtn.className = "btn-primary btn-active";
+
+    items.forEach(item => {
+      const div = document.createElement("div");
+      div.className = "card";
+      div.innerHTML = `
+        <div class="card-title">${item.name}</div>
+        <div class="card-meta">${item.status}</div>
+      `;
+      listEl.appendChild(div);
+    });
   }
 
-  const initData = tg ? (tg.initData || "") : "";
-
-  const els = {
-    // header
-    hicon: document.getElementById("hicon"),
-    htitle: document.getElementById("htitle"),
-    subtitle: document.getElementById("subtitle"),
-    toast: document.getElementById("toast"),
-
-    // tabs
-    tabToday: document.getElementById("tabToday"),
-    tabPlants: document.getElementById("tabPlants"),
-    tabNorms: document.getElementById("tabNorms"),
-
-    // screens
-    screenToday: document.getElementById("screenToday"),
-    screenPlants: document.getElementById("screenPlants"),
-    screenNorms: document.getElementById("screenNorms"),
-
-    // today
-    stats: document.getElementById("stats"),
-    adviceBanner: document.getElementById("adviceBanner"),
-    list: document.getElementById("list"),
-    error: document.getElementById("error"),
-    btnWater: document.getElementById("btnWater"),
-    btnSelectAll: document.getElementById("btnSelectAll"),
-    btnSelectNeed: document.getElementById("btnSelectNeed"),
-    btnClear: document.getElementById("btnClear"),
-    btnbar: document.getElementById("btnbar"),
-
-    // plants
-    plantsActive: document.getElementById("plantsActive"),
-    plantsArchived: document.getElementById("plantsArchived"),
-    plantsList: document.getElementById("plantsList"),
-    plantsError: document.getElementById("plantsError"),
-    btnAddPlant: document.getElementById("btnAddPlant"),
-
-    // norms
-    normsList: document.getElementById("normsList"),
-    normsError: document.getElementById("normsError"),
-    btnRefreshNorms: document.getElementById("btnRefreshNorms"),
+  waterBtn.onclick = () => {
+    if (items.length === 0) return;
+    // POST /api/water
   };
 
-    // Feature flags
-  const FEATURE_ADVICE_BANNER = false; // hide "Совет" block in mini app (keep code)
-  if (els.adviceBanner) els.adviceBanner.style.display = FEATURE_ADVICE_BANNER ? "block" : "none";
-
-
-const state = {
-    screen: "today", // today|plants|norms
-    // today
-    items: [],
-    selected: new Set(),
-    loading: true,
-    saving: false,
-    filter: "all", // all|overdue|due|ok|unknown
-    // plants
-    plants: [],
-    plantsMode: "active", // active|archived
-    plantsLoading: false,
-    // norms
-    norms: [],
-    normsLoading: false,
-  };
-
-  function toast(msg){
-    if (!msg) return;
-    els.toast.textContent = msg;
-    els.toast.style.display = "block";
-    clearTimeout(toast._t);
-    toast._t = setTimeout(()=>{ els.toast.style.display = "none"; }, 1800);
-  }
-
-  function showError(el, msg){
-    el.style.display = "block";
-    el.textContent = msg;
-  }
-  function clearError(el){
-    el.style.display = "none";
-    el.textContent = "";
-  }
-
-  function setScreen(screen){
-    state.screen = screen;
-
-    // screens
-    els.screenToday.classList.toggle("active", screen==="today");
-    els.screenPlants.classList.toggle("active", screen==="plants");
-    els.screenNorms.classList.toggle("active", screen==="norms");
-
-    // tabs
-    els.tabToday.classList.toggle("active", screen==="today");
-    els.tabPlants.classList.toggle("active", screen==="plants");
-    els.tabNorms.classList.toggle("active", screen==="norms");
-
-    // header
-    if (screen==="today"){ els.hicon.textContent="📅"; els.htitle.textContent="Сегодня"; }
-    if (screen==="plants"){ els.hicon.textContent="🪴"; els.htitle.textContent="Растения"; }
-    if (screen==="norms"){ els.hicon.textContent="💦"; els.htitle.textContent="Нормы"; }
-
-    // bottom bar only on today
-    els.btnbar.style.display = screen==="today" ? "block" : "none";
-
-    // subtitle
-    renderSubtitle();
-
-    // lazy load
-    if (screen==="plants" && state.plants.length===0) loadPlants();
-    if (screen==="norms" && state.norms.length===0) loadNorms();
-  }
-
-  function renderSubtitle(){
-  if (state.screen==="today"){
-    const total = state.items.length;
-    const sel = state.selected.size;
-    const c = statusCounts(state.items);
-    const action = c.overdue + c.due + c.unknown;
-
-    const f = state.filter==="all" ? "Все" :
-              state.filter==="overdue" ? "Просрочено" :
-              state.filter==="due" ? "Пора" : "Настроить";
-
-    els.subtitle.textContent = `Всего: ${total} · Действий: ${action} · Выбрано: ${sel} · Фильтр: ${f}`;
-    return;
-  }
-  if (state.screen==="plants"){
-    els.subtitle.textContent = state.plantsMode==="active" ? "Активные растения" : "Архивные растения";
-    return;
-  }
-  if (state.screen==="norms"){
-    els.subtitle.textContent = "Просмотр и настройка норм полива";
-    return;
-  }
-  els.subtitle.textContent = "";
-}
-
-  function apiFetch(path, opts){
-    opts = opts || {};
-    opts.headers = Object.assign({}, opts.headers || {}, {
-      "Content-Type": "application/json",
-      "X-Telegram-InitData": initData
-    });
-    return fetch(path, opts).then(async (res)=>{
-      const text = await res.text();
-      let data = null;
-      try { data = text ? JSON.parse(text) : null; } catch(e){}
-      if (!res.ok){
-        const msg = (data && (data.detail || data.message)) || `HTTP ${res.status}`;
-        throw new Error(msg);
-      }
-      return data;
-    });
-  }
-
-  // -------- TODAY --------
-  function statusCounts(items){
-    const c = {overdue:0, due:0, ok:0, unknown:0, all: items.length};
-    for (const it of items){
-      const s = it.status || "unknown";
-      if (c[s] !== undefined) c[s] += 1;
-      else c.unknown += 1;
-    }
-    return c;
-  }
-
-  function renderStats(){
-  if (!state.items.length){
-    els.stats.style.display="none";
-    els.stats.innerHTML="";
-    return;
-  }
-  const c = statusCounts(state.items);
-  const actions = c.overdue + c.due + c.unknown;
-  if (actions === 0) {
-    els.stats.style.display="none";
-    els.stats.innerHTML="";
-    return;
-  }
-
-  // Today is an "action" screen: list only what needs attention.
-  // We still show the count of "Ок" items, but we don't make it a filter.
-  const chips = [
-    {k:"all", label:"Все", cls:""},
-    {k:"overdue", label:`Просрочено: ${c.overdue}`, cls:"danger"},
-    {k:"due", label:`Пора: ${c.due}`, cls:"warn"},
-    {k:"unknown", label:`Настроить: ${c.unknown}`, cls:"neutral"},
-  ];
-
-  const okChip = `<span class="pill ok passive">Ок: ${c.ok}</span>`;
-
-  els.stats.innerHTML =
-    chips.map(ch=>{
-      const active = (state.filter===ch.k) ? "active" : "";
-      return `<button class="pill ${ch.cls} ${active}" data-filter="${ch.k}">${ch.label}</button>`;
-    }).join("") + okChip;
-
-  els.stats.style.display="flex";
-
-  // bind
-  els.stats.querySelectorAll("[data-filter]").forEach(btn=>{
-    btn.addEventListener("click", ()=>{
-      state.filter = btn.getAttribute("data-filter") || "all";
-      renderToday();
-    });
-  });
-}
-
-  function renderToday(){
-    clearError(els.error);
-    renderStats();
-
-        const items = state.items.filter(it => {
-      const st = (it.status || "unknown");
-      if (state.filter==="all") return (st==="overdue" || st==="due" || st==="unknown");
-      return st===state.filter;
-    });
-
-        if (!items.length){
-      if (state.filter==="all"){
-        els.list.innerHTML = `<div class="empty">Сегодня всё ок 🌿</div>`;
-      } else {
-        els.list.innerHTML = `<div class="empty">По фильтру ничего нет.</div>`;
-      }
-    } else {
-      els.list.innerHTML = items.map(it=>{
-        const checked = state.selected.has(it.id);
-        const status = it.status || "unknown";
-        const badgeText = status==="overdue" ? "Просрочено" :
-                          status==="due" ? "Пора" :
-                          status==="ok" ? (it.due_in_days!=null ? `Через ${it.due_in_days}д` : "Ок") :
-                          "Настроить";
-        const meta1 = it.days_since_last_watering==null ? "Полив: нет данных" : `Полив: ${it.days_since_last_watering}д назад`;
-        const meta2 = it.norm_days==null ? "норма: —" : `норма: ${it.norm_days}д`;
-        return `
-          <button class="card ${checked ? "selected" : ""}" data-id="${it.id}">
-            <div class="top">
-              <div class="name">${escapeHtml(it.name || "")}</div>
-              <span class="badge ${status}">${badgeText}</span>
-            </div>
-            <div class="meta">${meta1}<span class="dot">•</span>${meta2}</div>
-          </button>
-        `;
-      }).join("");
-    }
-
-    // card clicks
-    els.list.querySelectorAll("[data-id]").forEach(btn=>{
-      btn.addEventListener("click", ()=>{
-        const id = Number(btn.getAttribute("data-id"));
-        if (!id) return;
-        if (state.selected.has(id)) state.selected.delete(id);
-        else state.selected.add(id);
-        renderToday();
-        updateButtons();
-      });
-    });
-
-    renderSubtitle();
-    updateButtons();
-  }
-
-  function updateButtons(){
-    const any = state.selected.size>0;
-    const disabled = state.loading || state.saving || state.items.length===0;
-    els.btnWater.disabled = disabled || !any;
-    els.btnSelectAll.disabled = disabled;
-    els.btnSelectNeed.disabled = disabled;
-    els.btnClear.disabled = disabled || !any;
-  }
-
-  async function loadToday(){
-    state.loading = true;
-    state.items = [];
-    state.selected = new Set();
-    state.filter = "all";
-    updateButtons();
-    els.list.innerHTML = `<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>`;
-    els.stats.style.display="none";
-    renderSubtitle();
-
-    try{
-      const data = await apiFetch("/api/today", {method:"GET"});
-      state.items = Array.isArray(data.items) ? data.items : [];
-      state.loading = false;
-      renderToday();
-    }catch(e){
-      state.loading = false;
-      showError(els.error, e && e.message ? e.message : "Ошибка загрузки");
-      els.list.innerHTML = `<div class="empty">Не удалось загрузить данные.</div>`;
-      updateButtons();
-      renderSubtitle();
-    }
-  }
-
-  async function markWatered(){
-    if (state.saving || state.selected.size===0) return;
-    state.saving = true;
-    updateButtons();
-    clearError(els.error);
-    try{
-      const ids = Array.from(state.selected);
-      const res = await apiFetch("/api/water", {method:"POST", body: JSON.stringify({plant_ids: ids})});
-      toast(`✅Полив отмечен: ${res && res.updated!=null ? res.updated : ids.length}`);
-      await loadToday();
-    }catch(e){
-      showError(els.error, e && e.message ? e.message : "Ошибка сохранения");
-      state.saving = false;
-      updateButtons();
-    }finally{
-      state.saving = false;
-      updateButtons();
-    }
-  }
-
-  function selectAllToday(){
-    state.items.forEach(it=> state.selected.add(it.id));
-    renderToday();
-  }
-  function selectNeedToday(){
-    state.items.forEach(it=>{
-      const s = it.status || "unknown";
-      if (s==="due" || s==="overdue") state.selected.add(it.id);
-    });
-    renderToday();
-  }
-  function clearSelection(){
-    state.selected.clear();
-    renderToday();
-  }
-
-  // -------- PLANTS --------
-  function renderPlants(){
-    clearError(els.plantsError);
-
-    if (state.plantsLoading){
-      els.plantsList.innerHTML = `<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>`;
-      return;
-    }
-    if (!state.plants.length){
-      els.plantsList.innerHTML = `<div class="empty">${state.plantsMode==="active" ? "Нет активных растений." : "Архив пуст."}</div>`;
-      return;
-    }
-    els.plantsList.innerHTML = state.plants.map(p=>{
-      const norm = p.water_every_days==null ? "норма: —" : `норма: ${p.water_every_days}д`;
-      const lw = p.last_watered_at ? `посл.полив: ${formatDate(p.last_watered_at)}` : "посл.полив: —";
-      const right = state.plantsMode==="active"
-        ? `<button class="btn2" data-act="rename" data-id="${p.id}">✏️Переименовать</button>
-           <button class="btn2" data-act="norm" data-id="${p.id}">💦Норма</button>
-           <button class="btn2 danger" data-act="archive" data-id="${p.id}">🗄️Архив</button>`
-        : `<button class="btn2 accent" data-act="restore" data-id="${p.id}">↩️Восстановить</button>`;
-      return `
-        <div class="card" style="cursor:default">
-          <div class="top">
-            <div class="name">${escapeHtml(p.name || "")}</div>
-            <span class="badge neutral">${norm}</span>
-          </div>
-          <div class="meta">${lw}</div>
-          <div class="actions" style="margin-top:10px">${right}</div>
-        </div>
-      `;
-    }).join("");
-
-    els.plantsList.querySelectorAll("[data-act]").forEach(btn=>{
-      btn.addEventListener("click", async ()=>{
-        const act = btn.getAttribute("data-act");
-        const id = Number(btn.getAttribute("data-id"));
-        if (!id) return;
-
-        try{
-          if (act==="rename"){
-            const cur = state.plants.find(x=>x.id===id);
-            const name = prompt("Новое имя растения:", cur ? cur.name : "");
-            if (!name) return;
-            await apiFetch(`/api/plants/${id}`, {method:"PATCH", body: JSON.stringify({name})});
-            toast("✅Переименовано");
-            await loadPlants();
-          }
-          if (act==="norm"){
-            const cur = state.plants.find(x=>x.id===id);
-            const v = prompt("Норма полива (в днях). Пусто = убрать норму.", cur && cur.water_every_days!=null ? String(cur.water_every_days) : "");
-            if (v === null) return;
-            const days = v.trim()==="" ? null : Number(v);
-            if (days !== null && (!Number.isFinite(days) || days<=0 || days>365)) { alert("Введи число 1–365"); return; }
-            await apiFetch(`/api/plants/${id}/norm`, {method:"PATCH", body: JSON.stringify({days})});
-            toast("✅Норма сохранена");
-            await loadPlants();
-          }
-          if (act==="archive"){
-            if (!confirm("Убрать растение в архив?")) return;
-            await apiFetch(`/api/plants/${id}/archive`, {method:"POST"});
-            toast("🗄️В архиве");
-            await loadPlants();
-          }
-          if (act==="restore"){
-            await apiFetch(`/api/plants/${id}/restore`, {method:"POST"});
-            toast("✅Восстановлено");
-            await loadPlants();
-          }
-        }catch(e){
-          showError(els.plantsError, e && e.message ? e.message : "Ошибка");
-        }
-      });
-    });
-  }
-
-  async function loadPlants(){
-    state.plantsLoading = true;
-    renderPlants();
-    try{
-      const q = state.plantsMode==="active" ? "true" : "false";
-      const data = await apiFetch(`/api/plants?active=${q}`, {method:"GET"});
-      state.plants = Array.isArray(data.items) ? data.items : [];
-      state.plantsLoading = false;
-      renderPlants();
-    }catch(e){
-      state.plantsLoading = false;
-      showError(els.plantsError, e && e.message ? e.message : "Ошибка загрузки");
-      renderPlants();
-    }
-    renderSubtitle();
-  }
-
-  async function addPlant(){
-    const name = prompt("Название растения:");
-    if (!name) return;
-    clearError(els.plantsError);
-    try{
-      await apiFetch(`/api/plants`, {method:"POST", body: JSON.stringify({name})});
-      toast("✅Добавлено");
-      await loadPlants();
-    }catch(e){
-      showError(els.plantsError, e && e.message ? e.message : "Ошибка добавления");
-    }
-  }
-
-  // -------- NORMS --------
-  function renderNorms(){
-    clearError(els.normsError);
-    if (state.normsLoading){
-      els.normsList.innerHTML = `<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>`;
-      return;
-    }
-    if (!state.norms.length){
-      els.normsList.innerHTML = `<div class="empty">Нет растений с заданной нормой.</div>`;
-      return;
-    }
-    els.normsList.innerHTML = state.norms.map(p=>{
-      return `
-        <div class="card" style="cursor:default">
-          <div class="top">
-            <div class="name">${escapeHtml(p.name || "")}</div>
-            <span class="badge ok">${p.water_every_days}д</span>
-          </div>
-          <div class="actions" style="margin-top:10px">
-            <button class="btn2" data-act="edit" data-id="${p.id}">✏️Изменить</button>
-            <button class="btn2 danger" data-act="clear" data-id="${p.id}">🧹Убрать норму</button>
-          </div>
-        </div>
-      `;
-    }).join("");
-
-    els.normsList.querySelectorAll("[data-act]").forEach(btn=>{
-      btn.addEventListener("click", async ()=>{
-        const act = btn.getAttribute("data-act");
-        const id = Number(btn.getAttribute("data-id"));
-        if (!id) return;
-        try{
-          if (act==="edit"){
-            const cur = state.norms.find(x=>x.id===id);
-            const v = prompt("Новая норма (в днях):", cur ? String(cur.water_every_days) : "");
-            if (v === null) return;
-            const days = Number(v);
-            if (!Number.isFinite(days) || days<=0 || days>365) { alert("Введи число 1–365"); return; }
-            await apiFetch(`/api/plants/${id}/norm`, {method:"PATCH", body: JSON.stringify({days})});
-            toast("✅Норма обновлена");
-            await loadNorms();
-          }
-          if (act==="clear"){
-            if (!confirm("Убрать норму?")) return;
-            await apiFetch(`/api/plants/${id}/norm`, {method:"PATCH", body: JSON.stringify({days: null})});
-            toast("✅Норма убрана");
-            await loadNorms();
-          }
-        }catch(e){
-          showError(els.normsError, e && e.message ? e.message : "Ошибка");
-        }
-      });
-    });
-  }
-
-  async function loadNorms(){
-    state.normsLoading = true;
-    renderNorms();
-    try{
-      const data = await apiFetch(`/api/norms`, {method:"GET"});
-      state.norms = Array.isArray(data.items) ? data.items : [];
-      state.normsLoading = false;
-      renderNorms();
-    }catch(e){
-      state.normsLoading = false;
-      showError(els.normsError, e && e.message ? e.message : "Ошибка загрузки");
-      renderNorms();
-    }
-    renderSubtitle();
-  }
-
-  // helpers
-  function escapeHtml(str){
-    return String(str||"").replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
-  }
-  function formatDate(iso){
-    try{
-      const d = new Date(iso);
-      if (isNaN(d.getTime())) return "—";
-      const dd = String(d.getDate()).padStart(2,'0');
-      const mm = String(d.getMonth()+1).padStart(2,'0');
-      const yy = String(d.getFullYear()).slice(-2);
-      return `${dd}.${mm}.${yy}`;
-    }catch(e){ return "—"; }
-  }
-
-  // bindings
-  els.tabToday.addEventListener("click", ()=>setScreen("today"));
-  els.tabPlants.addEventListener("click", ()=>setScreen("plants"));
-  els.tabNorms.addEventListener("click", ()=>setScreen("norms"));
-
-  els.btnWater.addEventListener("click", markWatered);
-  els.btnSelectAll.addEventListener("click", selectAllToday);
-  els.btnSelectNeed.addEventListener("click", selectNeedToday);
-  els.btnClear.addEventListener("click", clearSelection);
-
-  els.plantsActive.addEventListener("click", ()=>{
-    state.plantsMode="active";
-    els.plantsActive.classList.add("active");
-    els.plantsArchived.classList.remove("active");
-    loadPlants();
-  });
-  els.plantsArchived.addEventListener("click", ()=>{
-    state.plantsMode="archived";
-    els.plantsArchived.classList.add("active");
-    els.plantsActive.classList.remove("active");
-    loadPlants();
-  });
-  els.btnAddPlant.addEventListener("click", addPlant);
-
-  els.btnRefreshNorms.addEventListener("click", loadNorms);
-
-  // init
-  if (!initData){
-    // For local browser usage (non-TG). We still allow UI to render; API may reject.
-    toast("ℹ️Открой из Telegram для полного доступа");
-  }
-
-  loadToday();
-})();
+  render();
 </script>
-</body>
 
+</body>
 </html>
