@@ -218,7 +218,7 @@
         <div class="skeleton"></div>
       </div>
 
-      <div class="banner">
+      <div class="banner" id="adviceBanner">
         ℹ️Совет по уходу за растениями (доступно только из чат-бота).
       </div>
 
@@ -305,6 +305,7 @@
 
     // today
     stats: document.getElementById("stats"),
+    adviceBanner: document.getElementById("adviceBanner"),
     list: document.getElementById("list"),
     error: document.getElementById("error"),
     btnWater: document.getElementById("btnWater"),
@@ -326,7 +327,12 @@
     btnRefreshNorms: document.getElementById("btnRefreshNorms"),
   };
 
-  const state = {
+    // Feature flags
+  const FEATURE_ADVICE_BANNER = false; // hide "Совет" block in mini app (keep code)
+  if (els.adviceBanner) els.adviceBanner.style.display = FEATURE_ADVICE_BANNER ? "block" : "none";
+
+
+const state = {
     screen: "today", // today|plants|norms
     // today
     items: [],
@@ -450,6 +456,12 @@
     return;
   }
   const c = statusCounts(state.items);
+  const actions = c.overdue + c.due + c.unknown;
+  if (actions === 0) {
+    els.stats.style.display="none";
+    els.stats.innerHTML="";
+    return;
+  }
 
   // Today is an "action" screen: list only what needs attention.
   // We still show the count of "Ок" items, but we don't make it a filter.
