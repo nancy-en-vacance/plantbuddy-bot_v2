@@ -185,7 +185,9 @@
     .mini{font-size:12px;color:var(--muted)}
     .inputrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
     .pill{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border);background:var(--card);padding:10px 12px;border-radius:999px;font-weight:700;cursor:pointer}
-    .pill.active{border-color:rgba(48,197,255,.55)}
+    
+    .pill.passive{opacity:.75;cursor:default;pointer-events:none}
+.pill.active{border-color:rgba(48,197,255,.55)}
     .toast{position:fixed;left:50%;bottom:86px;transform:translateX(-50%);background:#0f172a;color:#fff;
       padding:10px 12px;border-radius:999px;font-weight:700;box-shadow:0 14px 34px rgba(0,0,0,.25); display:none; z-index:50}
 
@@ -388,25 +390,29 @@
   }
 
   function renderSubtitle(){
-    if (state.screen==="today"){
-      const total = state.items.length;
-      const sel = state.selected.size;
-      const f = state.filter==="all" ? "Все" :
-                state.filter==="overdue" ? "Просрочено" :
-                state.filter==="due" ? "Пора" :
-                state.filter==="ok" ? "Ок" : "Настроить";
-      els.subtitle.textContent = `Растений: ${total} · Выбрано: ${sel} · Фильтр: ${f}`;
-      return;
-    }
-    if (state.screen==="plants"){
-      els.subtitle.textContent = state.plantsMode==="active" ? "Активные растения" : "Архивные растения";
-      return;
-    }
-    if (state.screen==="norms"){
-      els.subtitle.textContent = "Просмотр и настройка норм полива";
-      return;
-    }
+  if (state.screen==="today"){
+    const total = state.items.length;
+    const sel = state.selected.size;
+    const c = statusCounts(state.items);
+    const action = c.overdue + c.due + c.unknown;
+
+    const f = state.filter==="all" ? "Все" :
+              state.filter==="overdue" ? "Просрочено" :
+              state.filter==="due" ? "Пора" : "Настроить";
+
+    els.subtitle.textContent = `Всего: ${total} · Действий: ${action} · Выбрано: ${sel} · Фильтр: ${f}`;
+    return;
   }
+  if (state.screen==="plants"){
+    els.subtitle.textContent = state.plantsMode==="active" ? "Активные растения" : "Архивные растения";
+    return;
+  }
+  if (state.screen==="norms"){
+    els.subtitle.textContent = "Просмотр и настройка норм полива";
+    return;
+  }
+  els.subtitle.textContent = "";
+}
 
   function apiFetch(path, opts){
     opts = opts || {};
@@ -438,42 +444,57 @@
   }
 
   function renderStats(){
-    if (!state.items.length){
-      els.stats.style.display="none";
-      els.stats.innerHTML="";
-      return;
-    }
-    const c = statusCounts(state.items);
-    const chips = [
-      {k:"all", label:"Все", cls:""},
-      {k:"overdue", label:`Просрочено: ${c.overdue}`, cls:"danger"},
-      {k:"due", label:`Пора: ${c.due}`, cls:"warn"},
-      {k:"ok", label:`Ок: ${c.ok}`, cls:"ok"},
-      {k:"unknown", label:`Настроить: ${c.unknown}`, cls:"neutral"},
-    ];
-    els.stats.innerHTML = chips.map(ch=>{
-      const active = (state.filter===ch.k) ? "active" : "";
-      return `<button class="chip ${ch.cls} ${active}" data-filter="${ch.k}">${ch.label}</button>`;
-    }).join("");
-    els.stats.style.display="flex";
-
-    // bind
-    els.stats.querySelectorAll("[data-filter]").forEach(btn=>{
-      btn.addEventListener("click", ()=>{
-        state.filter = btn.getAttribute("data-filter") || "all";
-        renderToday();
-      });
-    });
+  if (!state.items.length){
+    els.stats.style.display="none";
+    els.stats.innerHTML="";
+    return;
   }
+  const c = statusCounts(state.items);
+
+  // Today is an "action" screen: list only what needs attention.
+  // We still show the count of "Ок" items, but we don't make it a filter.
+  const chips = [
+    {k:"all", label:"Все", cls:""},
+    {k:"overdue", label:`Просрочено: ${c.overdue}`, cls:"danger"},
+    {k:"due", label:`Пора: ${c.due}`, cls:"warn"},
+    {k:"unknown", label:`Настроить: ${c.unknown}`, cls:"neutral"},
+  ];
+
+  const okChip = `<span class="pill ok passive">Ок: ${c.ok}</span>`;
+
+  els.stats.innerHTML =
+    chips.map(ch=>{
+      const active = (state.filter===ch.k) ? "active" : "";
+      return `<button class="pill ${ch.cls} ${active}" data-filter="${ch.k}">${ch.label}</button>`;
+    }).join("") + okChip;
+
+  els.stats.style.display="flex";
+
+  // bind
+  els.stats.querySelectorAll("[data-filter]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      state.filter = btn.getAttribute("data-filter") || "all";
+      renderToday();
+    });
+  });
+}
 
   function renderToday(){
     clearError(els.error);
     renderStats();
 
-    const items = state.items.filter(it => state.filter==="all" ? true : (it.status||"unknown")===state.filter);
+        const items = state.items.filter(it => {
+      const st = (it.status || "unknown");
+      if (state.filter==="all") return (st==="overdue" || st==="due" || st==="unknown");
+      return st===state.filter;
+    });
 
-    if (!items.length){
-      els.list.innerHTML = `<div class="empty">По фильтру ничего нет.</div>`;
+        if (!items.length){
+      if (state.filter==="all"){
+        els.list.innerHTML = `<div class="empty">Сегодня всё ок 🌿</div>`;
+      } else {
+        els.list.innerHTML = `<div class="empty">По фильтру ничего нет.</div>`;
+      }
     } else {
       els.list.innerHTML = items.map(it=>{
         const checked = state.selected.has(it.id);
