@@ -102,6 +102,63 @@ def list_plants_archived(user_id: int) -> List[Tuple[int, str]]:
         return cur.fetchall()
 
 
+
+
+def list_plants_full(user_id: int, active: bool = True):
+    """Список растений с деталями для Mini App."""
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, name, water_every_days, last_watered_at, active
+            FROM plants
+            WHERE user_id=%s AND active=%s
+            ORDER BY id
+            """,
+            (user_id, active),
+        )
+        rows = cur.fetchall()
+        items = []
+        for r in rows:
+            items.append(
+                {
+                    "id": int(r[0]),
+                    "name": r[1],
+                    "water_every_days": r[2],
+                    "last_watered_at": r[3].isoformat() if r[3] else None,
+                    "active": bool(r[4]),
+                }
+            )
+        return items
+
+
+def archive_plant(user_id: int, plant_id: int) -> bool:
+    """Перенести растение в архив (active=FALSE)."""
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE plants
+            SET active=FALSE
+            WHERE id=%s AND user_id=%s
+            """,
+            (plant_id, user_id),
+        )
+        conn.commit()
+        return cur.rowcount == 1
+
+
+def restore_plant(user_id: int, plant_id: int) -> bool:
+    """Восстановить растение из архива (active=TRUE)."""
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE plants
+            SET active=TRUE
+            WHERE id=%s AND user_id=%s
+            """,
+            (plant_id, user_id),
+        )
+        conn.commit()
+        return cur.rowcount == 1
 def set_active(user_id: int, plant_id: int, active: bool) -> bool:
     """Переключает active. Возвращает True если обновилось 1 растение."""
     with get_conn() as conn, conn.cursor() as cur:
@@ -141,6 +198,38 @@ def set_norm(user_id: int, plant_id: int, days: int) -> bool:
         """, (days, plant_id, user_id))
         conn.commit()
         return cur.rowcount == 1
+
+
+
+def clear_norm(user_id: int, plant_id: int) -> bool:
+    """Убрать норму полива (water_every_days = NULL)."""
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE plants
+            SET water_every_days=NULL
+            WHERE id=%s AND user_id=%s
+            """,
+            (plant_id, user_id),
+        )
+        conn.commit()
+        return cur.rowcount == 1
+
+
+def get_norms_full(user_id: int):
+    """Нормы полива с id для редактирования в Mini App."""
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, name, water_every_days
+            FROM plants
+            WHERE user_id=%s AND active=TRUE AND water_every_days IS NOT NULL
+            ORDER BY name
+            """,
+            (user_id,),
+        )
+        rows = cur.fetchall()
+        return [{"id": int(r[0]), "name": r[1], "water_every_days": int(r[2])} for r in rows]
 
 
 def get_norms(user_id: int) -> List[Tuple[str, int]]:
