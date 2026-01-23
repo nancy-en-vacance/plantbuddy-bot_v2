@@ -255,6 +255,10 @@
 
     .chev{margin-left:auto;color:#9CA3AF;font-weight:900;}
 
+  
+    #tabNorms{display:none!important;}
+    #screenNorms{display:none!important;}
+
   </style>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
@@ -270,7 +274,8 @@
     <div class="tabs" role="tablist">
       <button class="tab active" id="tabToday">📅Сегодня</button>
       <button class="tab" id="tabPlants">🪴Растения</button>
-</div>
+      <button class="tab" id="tabNorms">💦Нормы</button>
+    </div>
 
     <!-- SCREEN: TODAY -->
     <section class="screen active" id="screenToday">
@@ -307,7 +312,22 @@
       <div class="error" id="plantsError" style="display:none"></div>
     </section>
 
-    </div>
+    <!-- SCREEN: NORMS -->
+    <section class="screen" id="screenNorms">
+      <div class="row" style="margin:2px 0 10px;">
+        <div class="mini">Норма = раз в N дней (для активных растений)</div>
+        <button class="btn2" id="btnRefreshNorms">Обновить</button>
+      </div>
+
+      <div class="list" id="normsList">
+        <div class="skeleton"></div>
+        <div class="skeleton"></div>
+        <div class="skeleton"></div>
+      </div>
+
+      <div class="error" id="normsError" style="display:none"></div>
+    </section>
+  </div>
 
   <div class="btnbar" id="btnbar">
     <div class="bar">
@@ -362,10 +382,12 @@
     // tabs
     tabToday: document.getElementById("tabToday"),
     tabPlants: document.getElementById("tabPlants"),
+    tabNorms: document.getElementById("tabNorms"),
 
     // screens
     screenToday: document.getElementById("screenToday"),
     screenPlants: document.getElementById("screenPlants"),
+    screenNorms: document.getElementById("screenNorms"),
 
     // today
     stats: document.getElementById("stats"),
@@ -385,11 +407,17 @@
     plantsList: document.getElementById("plantsList"),
     plantsError: document.getElementById("plantsError"),
     btnAddPlant: document.getElementById("btnAddPlant"),
+
+    // norms
+    normsList: document.getElementById("normsList"),
+    normsError: document.getElementById("normsError"),
+    btnRefreshNorms: document.getElementById("btnRefreshNorms"),
   };
 
     // Feature flags
   const FEATURE_ADVICE_BANNER = false; // hide "Совет" block in mini app (keep code)
   if (els.adviceBanner) els.adviceBanner.style.display = FEATURE_ADVICE_BANNER ? "block" : "none";
+
 
 const state = {
     screen: "today", // today|plants|norms
@@ -403,6 +431,9 @@ const state = {
     plants: [],
     plantsMode: "active", // active|archived
     plantsLoading: false,
+    // norms
+    norms: [],
+    normsLoading: false,
     sheetPlantId: null,
   };
 
@@ -428,15 +459,21 @@ const state = {
     state.screen = screen;
 
     // screens
-    els.screenToday.classList.toggle("active", screen==="today");
-    els.screenPlants.classList.toggle("active", screen==="plants");
-// tabs
-    els.tabToday.classList.toggle("active", screen==="today");
-    els.tabPlants.classList.toggle("active", screen==="plants");
-// header
+    els.screenToday?.classList.toggle("active", screen==="today");
+    els.screenPlants?.classList.toggle("active", screen==="plants");
+    els.screenNorms?.classList.toggle("active", screen==="norms");
+
+    // tabs
+    els.tabToday?.classList.toggle("active", screen==="today");
+    els.tabPlants?.classList.toggle("active", screen==="plants");
+    els.tabNorms?.classList.toggle("active", screen==="norms");
+
+    // header
     if (screen==="today"){ els.hicon.textContent="📅"; els.htitle.textContent="Сегодня"; }
     if (screen==="plants"){ els.hicon.textContent="🪴"; els.htitle.textContent="Растения"; }
-// bottom bar only on today
+    if (screen==="norms"){ els.hicon.textContent="💦"; els.htitle.textContent="Нормы"; }
+
+    // bottom bar only on today
     els.btnbar.style.display = screen==="today" ? "block" : "none";
 
     // subtitle
@@ -444,7 +481,8 @@ const state = {
 
     // lazy load
     if (screen==="plants" && state.plants.length===0) loadPlants();
-}
+    if (screen==="norms" && state.norms.length===0) loadNorms();
+  }
 
   function renderSubtitle(){
   if (state.screen==="today"){
@@ -462,6 +500,10 @@ const state = {
   }
   if (state.screen==="plants"){
     els.subtitle.textContent = state.plantsMode==="active" ? "Активные растения" : "Архивные растения";
+    return;
+  }
+  if (state.screen==="norms"){
+    els.subtitle.textContent = "Просмотр и настройка норм полива";
     return;
   }
   els.subtitle.textContent = "";
@@ -808,6 +850,7 @@ const state = {
     els.sheetActions.innerHTML = "";
   }
 
+
   async function loadPlants(){
     state.plantsLoading = true;
     renderPlants();
@@ -839,6 +882,73 @@ const state = {
   }
 
   // -------- NORMS --------
+  function renderNorms(){
+    clearError(els.normsError);
+    if (state.normsLoading){
+      els.normsList.innerHTML = `<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>`;
+      return;
+    }
+    if (!state.norms.length){
+      els.normsList.innerHTML = `<div class="empty">Нет растений с заданной нормой.</div>`;
+      return;
+    }
+    els.normsList.innerHTML = state.norms.map(p=>{
+      return `
+        <div class="card" style="cursor:default">
+          <div class="top">
+            <div class="name">${escapeHtml(p.name || "")}</div>
+            <span class="badge ok">${p.water_every_days}д</span>
+          </div>
+          <div class="actions" style="margin-top:10px">
+            <button class="btn2" data-act="edit" data-id="${p.id}">✏️Изменить</button>
+            <button class="btn2 danger" data-act="clear" data-id="${p.id}">🧹Убрать норму</button>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    els.normsList.querySelectorAll("[data-act]").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        const act = btn.getAttribute("data-act");
+        const id = Number(btn.getAttribute("data-id"));
+        if (!id) return;
+        try{
+          if (act==="edit"){
+            const cur = state.norms.find(x=>x.id===id);
+            const v = prompt("Новая норма (в днях):", cur ? String(cur.water_every_days) : "");
+            if (v === null) return;
+            const days = Number(v);
+            if (!Number.isFinite(days) || days<=0 || days>365) { alert("Введи число 1–365"); return; }
+            await apiFetch(`/api/plants/${id}/norm`, {method:"PATCH", body: JSON.stringify({days})});
+            toast("✅Норма обновлена");
+            await loadNorms();
+          }
+          if (act==="clear"){
+            if (!confirm("Убрать норму?")) return;
+            await apiFetch(`/api/plants/${id}/norm`, {method:"PATCH", body: JSON.stringify({days: null})});
+            toast("✅Норма убрана");
+            await loadNorms();
+          }
+        }catch(e){
+          showError(els.normsError, e && e.message ? e.message : "Ошибка");
+        }
+      });
+    });
+  }
+
+  async function loadNorms(){
+    state.normsLoading = true;
+    renderNorms();
+    try{
+      const data = await apiFetch(`/api/norms`, {method:"GET"});
+      state.norms = Array.isArray(data.items) ? data.items : [];
+      state.normsLoading = false;
+      renderNorms();
+    }catch(e){
+      state.normsLoading = false;
+      showError(els.normsError, e && e.message ? e.message : "Ошибка загрузки");
+      renderNorms();
+    }
     renderSubtitle();
   }
 
@@ -860,7 +970,9 @@ const state = {
   // bindings
   els.tabToday.addEventListener("click", ()=>setScreen("today"));
   els.tabPlants.addEventListener("click", ()=>setScreen("plants"));
-els.btnWater.addEventListener("click", markWatered);
+  if (els.tabNorms) els.tabNorms.addEventListener("click", ()=>setScreen("norms"));
+
+  els.btnWater.addEventListener("click", markWatered);
   els.btnSelectAll.addEventListener("click", selectAllToday);
   els.btnSelectNeed.addEventListener("click", selectNeedToday);
   els.btnClear.addEventListener("click", clearSelection);
@@ -883,7 +995,10 @@ els.btnWater.addEventListener("click", markWatered);
   els.overlay.addEventListener("click", closePlantSheet);
   els.sheet.addEventListener("click", (e)=>{ if (e.target===els.sheet) closePlantSheet(); });
   document.addEventListener("keydown", (e)=>{ if (e.key==="Escape") closePlantSheet(); });
-// init
+
+  els.btnRefreshNorms.addEventListener("click", loadNorms);
+
+  // init
   if (!initData){
     // For local browser usage (non-TG). We still allow UI to render; API may reject.
     toast("ℹ️Открой из Telegram для полного доступа");
