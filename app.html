@@ -198,6 +198,63 @@
     .toast{position:fixed;left:50%;bottom:86px;transform:translateX(-50%);background:#0f172a;color:#fff;
       padding:10px 12px;border-radius:999px;font-weight:700;box-shadow:0 14px 34px rgba(0,0,0,.25); display:none; z-index:50}
 
+  
+    /* Bottom sheet (Plants actions) */
+    .overlay{
+      position:fixed; inset:0;
+      background:rgba(17,24,39,.35);
+      backdrop-filter: blur(2px);
+      display:none;
+      z-index:50;
+    }
+    .overlay.show{display:block;}
+
+    .sheet{
+      position:fixed; left:0; right:0; bottom:0;
+      z-index:60;
+      display:none;
+      padding:12px 16px calc(16px + env(safe-area-inset-bottom));
+    }
+    .sheet.show{display:block;}
+
+    .sheetcard{
+      width:min(520px, calc(100vw - 32px));
+      margin:0 auto;
+      background:var(--card);
+      border:1px solid var(--border);
+      border-radius:22px;
+      box-shadow:0 20px 60px rgba(42,45,52,.22);
+      overflow:hidden;
+      transform: translateY(8px);
+      animation: sheetIn .18s ease-out forwards;
+    }
+    @keyframes sheetIn { to { transform: translateY(0); } }
+
+    .sheethead{padding:14px 14px 10px; border-bottom:1px solid rgba(215,226,232,.7);}
+    .sheettitle{font-weight:900;font-size:16px;line-height:1.15;}
+    .sheetmeta{margin-top:6px;color:var(--muted);font-size:13px;line-height:1.3;display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+    .sheetmeta .dot{opacity:.6}
+
+    .sheetactions{padding:12px 14px;display:flex;flex-direction:column;gap:10px;}
+    .actionbtn{
+      width:100%;
+      padding:12px 12px;
+      border-radius:14px;
+      border:1px solid var(--border);
+      background:#fff;
+      font-weight:900;
+      font-size:14px;
+      display:flex;align-items:center;justify-content:center;gap:8px;
+      cursor:pointer;
+    }
+    .actionbtn:active{transform:translateY(1px);}
+    .actionbtn.danger{border-color:#F4C7C7;background:#FDECEC;color:var(--danger);}
+    .actionbtn.accent{border-color:#BFE9F7;background:#E9F8FE;}
+    .actionbtn.neutral{background:#F8FAFC;}
+    .actionbtn.ghost{background:transparent;color:var(--muted);}
+
+    .chev{margin-left:auto;color:#9CA3AF;font-weight:900;}
+
   </style>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
@@ -281,6 +338,17 @@
 
   <div class="toast" id="toast"></div>
 
+  <div class="overlay" id="overlay"></div>
+  <div class="sheet" id="sheet">
+    <div class="sheetcard" role="dialog" aria-modal="true">
+      <div class="sheethead">
+        <div class="sheettitle" id="sheetTitle">Растение</div>
+        <div class="sheetmeta" id="sheetMeta"></div>
+      </div>
+      <div class="sheetactions" id="sheetActions"></div>
+    </div>
+  </div>
+
 <script>
 (function(){
   const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
@@ -299,6 +367,13 @@
     htitle: document.getElementById("htitle"),
     subtitle: document.getElementById("subtitle"),
     toast: document.getElementById("toast"),
+
+    // sheet
+    overlay: document.getElementById("overlay"),
+    sheet: document.getElementById("sheet"),
+    sheetTitle: document.getElementById("sheetTitle"),
+    sheetMeta: document.getElementById("sheetMeta"),
+    sheetActions: document.getElementById("sheetActions"),
 
     // tabs
     tabToday: document.getElementById("tabToday"),
@@ -355,6 +430,7 @@ const state = {
     // norms
     norms: [],
     normsLoading: false,
+    sheetPlantId: null,
   };
 
   function toast(msg){
@@ -375,6 +451,7 @@ const state = {
   }
 
   function setScreen(screen){
+    closePlantSheet();
     state.screen = screen;
 
     // screens
@@ -655,68 +732,120 @@ const state = {
       els.plantsList.innerHTML = `<div class="empty">${state.plantsMode==="active" ? "Нет активных растений." : "Архив пуст."}</div>`;
       return;
     }
+
     els.plantsList.innerHTML = state.plants.map(p=>{
       const norm = p.water_every_days==null ? "норма: —" : `норма: ${p.water_every_days}д`;
       const lw = p.last_watered_at ? `посл.полив: ${formatDate(p.last_watered_at)}` : "посл.полив: —";
-      const right = state.plantsMode==="active"
-        ? `<button class="btn2" data-act="rename" data-id="${p.id}">✏️Переименовать</button>
-           <button class="btn2" data-act="norm" data-id="${p.id}">💦Норма</button>
-           <button class="btn2 danger" data-act="archive" data-id="${p.id}">🗄️Архив</button>`
-        : `<button class="btn2 accent" data-act="restore" data-id="${p.id}">↩️Восстановить</button>`;
       return `
-        <div class="card" style="cursor:default">
-          <div class="top">
-            <div class="name">${escapeHtml(p.name || "")}</div>
-            <span class="badge neutral">${norm}</span>
+        <div class="card plantcard" data-id="${p.id}">
+          <div class="meta" style="flex:1;min-width:0">
+            <div class="top" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+              <div class="title">${escapeHtml(p.name || "")}</div>
+              <span class="tag unknown" style="background:#F8FAFC">${norm}</span>
+            </div>
+            <div class="small">${lw}</div>
           </div>
-          <div class="meta">${lw}</div>
-          <div class="actions" style="margin-top:10px">${right}</div>
+          <div class="chev">›</div>
         </div>
       `;
     }).join("");
 
-    els.plantsList.querySelectorAll("[data-act]").forEach(btn=>{
-      btn.addEventListener("click", async ()=>{
-        const act = btn.getAttribute("data-act");
-        const id = Number(btn.getAttribute("data-id"));
+    els.plantsList.querySelectorAll(".plantcard").forEach(card=>{
+      card.addEventListener("click", ()=>{
+        const id = Number(card.getAttribute("data-id"));
         if (!id) return;
+        openPlantSheet(id);
+      });
+    });
+  }
+
+  function openPlantSheet(id){
+    const p = state.plants.find(x=>x.id===id);
+    if (!p) return;
+
+    state.sheetPlantId = id;
+
+    els.sheetTitle.textContent = p.name || "Растение";
+    const norm = p.water_every_days==null ? "норма: —" : `норма: ${p.water_every_days}д`;
+    const lw = p.last_watered_at ? `посл.полив: ${formatDate(p.last_watered_at)}` : "посл.полив: —";
+    els.sheetMeta.innerHTML = `<span>${norm}</span><span class="dot">•</span><span>${lw}</span>`;
+
+    const isActive = state.plantsMode==="active";
+    const actions = [];
+
+    if (isActive){
+      actions.push(`<button class="actionbtn neutral" data-act="rename">✏️Переименовать</button>`);
+      actions.push(`<button class="actionbtn" data-act="norm">💦Изменить норму</button>`);
+      actions.push(`<button class="actionbtn danger" data-act="archive">🗄️В архив</button>`);
+    } else {
+      actions.push(`<button class="actionbtn accent" data-act="restore">↩️Восстановить</button>`);
+      actions.push(`<button class="actionbtn neutral" data-act="rename">✏️Переименовать</button>`);
+    }
+    actions.push(`<button class="actionbtn ghost" data-act="close">Закрыть</button>`);
+
+    els.sheetActions.innerHTML = actions.join("");
+
+    els.overlay.classList.add("show");
+    els.sheet.classList.add("show");
+
+    // bind actions
+    els.sheetActions.querySelectorAll("[data-act]").forEach(btn=>{
+      btn.addEventListener("click", async (ev)=>{
+        ev.stopPropagation();
+        const act = btn.getAttribute("data-act");
+        if (!act) return;
+
+        if (act==="close"){ closePlantSheet(); return; }
 
         try{
           if (act==="rename"){
-            const cur = state.plants.find(x=>x.id===id);
+            const cur = state.plants.find(x=>x.id===state.sheetPlantId);
             const name = prompt("Новое имя растения:", cur ? cur.name : "");
             if (!name) return;
-            await apiFetch(`/api/plants/${id}`, {method:"PATCH", body: JSON.stringify({name})});
+            await apiFetch(`/api/plants/${state.sheetPlantId}`, {method:"PATCH", body: JSON.stringify({name})});
             toast("✅Переименовано");
+            closePlantSheet();
             await loadPlants();
           }
           if (act==="norm"){
-            const cur = state.plants.find(x=>x.id===id);
+            const cur = state.plants.find(x=>x.id===state.sheetPlantId);
             const v = prompt("Норма полива (в днях). Пусто = убрать норму.", cur && cur.water_every_days!=null ? String(cur.water_every_days) : "");
             if (v === null) return;
             const days = v.trim()==="" ? null : Number(v);
             if (days !== null && (!Number.isFinite(days) || days<=0 || days>365)) { alert("Введи число 1–365"); return; }
-            await apiFetch(`/api/plants/${id}/norm`, {method:"PATCH", body: JSON.stringify({days})});
+            await apiFetch(`/api/plants/${state.sheetPlantId}/norm`, {method:"PATCH", body: JSON.stringify({days})});
             toast("✅Норма сохранена");
+            closePlantSheet();
             await loadPlants();
           }
           if (act==="archive"){
             if (!confirm("Убрать растение в архив?")) return;
-            await apiFetch(`/api/plants/${id}/archive`, {method:"POST"});
+            await apiFetch(`/api/plants/${state.sheetPlantId}/archive`, {method:"POST"});
             toast("🗄️В архиве");
+            closePlantSheet();
             await loadPlants();
           }
           if (act==="restore"){
-            await apiFetch(`/api/plants/${id}/restore`, {method:"POST"});
+            await apiFetch(`/api/plants/${state.sheetPlantId}/restore`, {method:"POST"});
             toast("✅Восстановлено");
+            closePlantSheet();
             await loadPlants();
           }
         }catch(e){
           showError(els.plantsError, e && e.message ? e.message : "Ошибка");
+          closePlantSheet();
         }
       });
     });
   }
+
+  function closePlantSheet(){
+    state.sheetPlantId = null;
+    els.sheet.classList.remove("show");
+    els.overlay.classList.remove("show");
+    els.sheetActions.innerHTML = "";
+  }
+
 
   async function loadPlants(){
     state.plantsLoading = true;
@@ -857,6 +986,11 @@ const state = {
     loadPlants();
   });
   els.btnAddPlant.addEventListener("click", addPlant);
+
+  // sheet close handlers
+  els.overlay.addEventListener("click", closePlantSheet);
+  els.sheet.addEventListener("click", (e)=>{ if (e.target===els.sheet) closePlantSheet(); });
+  document.addEventListener("keydown", (e)=>{ if (e.key==="Escape") closePlantSheet(); });
 
   els.btnRefreshNorms.addEventListener("click", loadNorms);
 
