@@ -211,7 +211,6 @@ async def api_today(request: Request):
     user_id = get_user_id_from_request(request)
 
     now = datetime.now(timezone.utc)
-    today = now.date()
     items: list[dict] = []
 
     with storage.get_conn() as conn:
@@ -235,8 +234,7 @@ async def api_today(request: Request):
             if last.tzinfo is None:
                 last = last.replace(tzinfo=timezone.utc)
             last_iso = last.astimezone(timezone.utc).isoformat()
-            last_date = last.astimezone(timezone.utc).date()
-            days_since = (today - last_date).days
+            days_since = (now - last).days
 
         status = "unknown"
         due_in = None
@@ -288,6 +286,92 @@ async def api_water(request: Request):
 
     updated = storage.set_last_watered_bulk(user_id, updates) if updates else 0
     return JSONResponse({"ok": True, "updated": updated})
+
+
+# -------- Mini App: Plants management --------
+
+@app.get("/api/plants")
+async def api_plants(request: Request, active: str = "true"):
+    user_id = get_user_id_from_request(request)
+    a = str(active).lower().strip()
+    is_active = a in ("1", "true", "yes", "y", "on")
+    items = storage.list_plants_full(user_id, active=is_active)
+    return JSONResponse({"items": items})
+
+
+@app.post("/api/plants")
+async def api_add_plant(request: Request):
+    user_id = get_user_id_from_request(request)
+    payload = await request.json()
+    name = (payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+
+    storage.add_plant(user_id, name)
+    return JSONResponse({"ok": True})
+
+
+@app.patch("/api/plants/{plant_id}")
+async def api_rename_plant(request: Request, plant_id: int):
+    user_id = get_user_id_from_request(request)
+    payload = await request.json()
+    name = (payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+
+    ok = storage.rename_plant(user_id, int(plant_id), name)
+    if not ok:
+        raise HTTPException(status_code=404, detail="plant not found")
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/plants/{plant_id}/archive")
+async def api_archive_plant(request: Request, plant_id: int):
+    user_id = get_user_id_from_request(request)
+    ok = storage.archive_plant(user_id, int(plant_id))
+    if not ok:
+        raise HTTPException(status_code=404, detail="plant not found")
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/plants/{plant_id}/restore")
+async def api_restore_plant(request: Request, plant_id: int):
+    user_id = get_user_id_from_request(request)
+    ok = storage.restore_plant(user_id, int(plant_id))
+    if not ok:
+        raise HTTPException(status_code=404, detail="plant not found")
+    return JSONResponse({"ok": True})
+
+
+@app.patch("/api/plants/{plant_id}/norm")
+async def api_set_norm(request: Request, plant_id: int):
+    user_id = get_user_id_from_request(request)
+    payload = await request.json()
+    days = payload.get("days", None)
+
+    if days is None:
+        ok = storage.clear_norm(user_id, int(plant_id))
+    else:
+        try:
+            d = int(days)
+        except Exception:
+            raise HTTPException(status_code=400, detail="days must be int or null")
+        if d <= 0 or d > 365:
+            raise HTTPException(status_code=400, detail="days must be in 1..365")
+        ok = storage.set_norm(user_id, int(plant_id), d)
+
+    if not ok:
+        raise HTTPException(status_code=404, detail="plant not found")
+    return JSONResponse({"ok": True})
+
+
+
+@app.get("/api/norms")
+async def api_norms(request: Request):
+    user_id = get_user_id_from_request(request)
+    items = storage.get_norms_full(user_id)
+    return JSONResponse({"items": items})
+
 
 
 @app.post("/webhook")
