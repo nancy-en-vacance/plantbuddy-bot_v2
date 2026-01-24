@@ -211,6 +211,7 @@ async def api_today(request: Request):
     user_id = get_user_id_from_request(request)
 
     now = datetime.now(timezone.utc)
+    today = now.date()
     items: list[dict] = []
 
     with storage.get_conn() as conn:
@@ -233,10 +234,9 @@ async def api_today(request: Request):
         if isinstance(last, datetime):
             if last.tzinfo is None:
                 last = last.replace(tzinfo=timezone.utc)
-            last_utc = last.astimezone(timezone.utc)
-            last_iso = last_utc.isoformat()
-            # Day-level logic: compare calendar dates (avoids "6 days" when ~6.9 days passed)
-            days_since = (now.date() - last_utc.date()).days
+            last_iso = last.astimezone(timezone.utc).isoformat()
+            last_date = last.astimezone(timezone.utc).date()
+            days_since = (today - last_date).days
 
         status = "unknown"
         due_in = None
