@@ -47,7 +47,7 @@
 /* Tabs */
 .tabs{display:flex;gap:12px;margin:14px 0 10px;flex-wrap:wrap}
     .seg{display:flex;gap:10px;flex-wrap:wrap}
-.tab{border:1px solid var(--border);background:var(--card);color:var(--muted);padding:16px 22px;border-radius:999px;font-weight:800; box-shadow:0 6px 18px rgba(42,45,52,.10); cursor:pointer;font-size:16px;min-height:52px;}
+.tab{border:1px solid var(--border);background:var(--card);color:var(--muted);padding:16px 22px;border-radius:var(--radius);font-weight:800; box-shadow:0 6px 18px rgba(42,45,52,.10); cursor:pointer;font-size:16px;min-height:52px;}
 .tab.active{color:var(--tabAccent);border-color:rgba(0,151,178,.55); box-shadow:0 10px 22px rgba(0,151,178,.14)}
 .screen{display:none}
 .screen.active{display:block}
@@ -58,7 +58,7 @@
       display:inline-flex;align-items:center;gap:8px;
       padding:8px 10px;
       border:1px solid var(--border);
-      border-radius:999px;
+      border-radius:var(--radius);
       background:#FFFFFF;
       box-shadow:0 2px 10px rgba(42,45,52,.06);
       font-weight:700;
@@ -201,7 +201,7 @@
 
     .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
     .actions{display:flex;gap:8px;flex-wrap:wrap}
-    .btn2{border:1px solid var(--border);background:#fff;color:var(--text);padding:10px 12px;border-radius:14px;font-weight:700;cursor:pointer}
+    .btn2{border:1px solid var(--border);background:#fff;color:var(--text);padding:10px 12px;border-radius:var(--radius);font-weight:700;cursor:pointer}
     .btn2.toggle{min-width:96px}
     .btn2.toggle.active{background:rgba(48,197,255,.10)}
     .btn2:disabled{opacity:.6;cursor:default}
@@ -209,12 +209,12 @@
     .btn2.accent{border-color:rgba(48,197,255,.55)}
     .mini{font-size:12px;color:var(--muted)}
     .inputrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-    .pill{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border);background:var(--card);padding:10px 12px;border-radius:999px;font-weight:700;cursor:pointer}
+    .pill{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border);background:var(--card);padding:10px 12px;border-radius:var(--radius);font-weight:700;cursor:pointer}
     
     .pill.passive{opacity:.75;cursor:default;pointer-events:none}
 .pill.active{border-color:rgba(48,197,255,.55)}
     .toast{position:fixed;left:50%;bottom:86px;transform:translateX(-50%);background:#0f172a;color:#fff;
-      padding:10px 12px;border-radius:999px;font-weight:700;box-shadow:0 14px 34px rgba(0,0,0,.25); display:none; z-index:50}
+      padding:10px 12px;border-radius:var(--radius);font-weight:700;box-shadow:0 14px 34px rgba(0,0,0,.25); display:none; z-index:50}
 
   
     /* Bottom sheet (Plants actions) */
