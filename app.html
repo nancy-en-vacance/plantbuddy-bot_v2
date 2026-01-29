@@ -308,6 +308,10 @@
       </div>
 
       <div class="error" id="error" style="display:none"></div>
+
+      <div class="todayAction" id="todayAction" style="display:none">
+        <button class="btn" id="btnWaterInline" disabled>💦Отметить полив</button>
+      </div>
     </section>
 
     <!-- SCREEN: PLANTS -->
@@ -345,12 +349,7 @@
       <div class="error" id="normsError" style="display:none"></div>
     </section>
   </div>
-
-  <div class="btnbar" id="btnbar">
-    <div class="bar">
-      <button class="btn" id="btnWater" disabled>💦Отметить полив</button>
-    </div>
-  </div>
+</div>
 
   <div class="toast" id="toast"></div>
 
@@ -400,8 +399,8 @@
 
     // today
     list: document.getElementById("list"),
-    error: document.getElementById("error"),    btnWater: document.getElementById("btnWater"),    btnbar: document.getElementById("btnbar"),
-
+    error: document.getElementById("error"),    todayAction: document.getElementById("todayAction"),
+    btnWater: document.getElementById("btnWaterInline"),
     // plants
     plantsActive: document.getElementById("plantsActive"),
     plantsArchived: document.getElementById("plantsArchived"),
@@ -468,10 +467,6 @@ const state = {
     els.tabToday?.classList.toggle("active", screen==="today");
     els.tabPlants?.classList.toggle("active", screen==="plants");
     els.tabNorms?.classList.toggle("active", screen==="norms");
-
-    // bottom bar only on today
-    els.btnbar.style.display = screen==="today" ? "block" : "none";
-
     // lazy load
     if (screen==="plants" && state.plants.length===0) loadPlants();
     if (screen==="norms" && state.norms.length===0) loadNorms();
@@ -563,16 +558,18 @@ const state = {
   function updateButtons(){
     const c = statusCounts(state.items);
     const action = c.overdue + c.due + c.unknown;
-    const any = state.selected.size>0;
+    const anySelected = state.selected.size>0;
     const disabledGlobal = state.loading || state.saving || state.items.length===0;
 
-    // main action button
-    if (action === 0) {
-      els.btnWater.classList.add("inactive");
-      els.btnWater.disabled = false; // выглядит неактивной
-    } else {
-      els.btnWater.classList.remove("inactive");
-      els.btnWater.disabled = disabledGlobal || !any;
+    // Show action button only when there is something to water today
+    if (els.todayAction){
+      els.todayAction.style.display = action>0 ? "block" : "none";
+    }
+
+    // Main action button enabled only when user selected something
+    if (els.btnWater){
+      els.btnWater.disabled = disabledGlobal || action===0 || !anySelected;
+      els.btnWater.classList.toggle("inactive", action===0);
     }
   }
 
