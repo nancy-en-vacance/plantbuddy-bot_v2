@@ -518,9 +518,9 @@ const state = {
 
         if (!items.length){
       if (state.filter==="all"){
-        els.list.innerHTML = `<div class="empty"><div class="emptyBox"><img class="emptyImg" src="/assets/all-set.png" alt="All set" /><div>All set for today!</div></div></div>`;
+        els.list.innerHTML = `<div class="empty">All set for today!</div>`;
       } else {
-        els.list.innerHTML = `<div class="empty"><div class="emptyBox"><img class="emptyImg" src="/assets/all-set.png" alt="All set" /><div>All set for today!</div></div></div>`;
+        els.list.innerHTML = `<div class="empty">All set for today!</div>`;
       }
     } else {
       els.list.innerHTML = items.map(it=>{
