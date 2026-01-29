@@ -286,6 +286,11 @@
   #adviceBanner{display:none!important;}
 
   
+
+
+  .empty{display:flex;align-items:center;justify-content:center;min-height:50vh;font-size:30px;color:#000;text-align:center;font-family:'Ubuntu',sans-serif;}
+
+  .stats,.filters,.subline{display:none!important;}
 </style>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
@@ -512,29 +517,9 @@ const state = {
   }
 
   function renderSubtitle(){
-  if (state.screen==="today"){
-    const total = state.items.length;
-    const sel = state.selected.size;
-    const c = statusCounts(state.items);
-    const action = c.overdue + c.due + c.unknown;
-
-    const f = state.filter==="all" ? "Все" :
-              state.filter==="overdue" ? "Просрочено" :
-              state.filter==="due" ? "Пора" : "Настроить";
-
-    els.subtitle.textContent = `Всего: ${total} · Действий: ${action} · Выбрано: ${sel} · Фильтр: ${f}`;
-    return;
+    // Canva: fixed tagline (no stats line)
+    els.subtitle.textContent = "Знаю, когда поливать твои растения";
   }
-  if (state.screen==="plants"){
-    els.subtitle.textContent = state.plantsMode==="active" ? "Активные растения" : "Архивные растения";
-    return;
-  }
-  if (state.screen==="norms"){
-    els.subtitle.textContent = "Просмотр и настройка норм полива";
-    return;
-  }
-  els.subtitle.textContent = "";
-}
 
   function apiFetch(path, opts){
     opts = opts || {};
@@ -619,7 +604,7 @@ const state = {
 
         if (!items.length){
       if (state.filter==="all"){
-        els.list.innerHTML = `<div class="empty">Сегодня всё ок 🌿</div>`;
+        els.list.innerHTML = `<div class="empty">💧Сегодня все ок</div>`;
       } else {
         els.list.innerHTML = `<div class="empty">По фильтру ничего нет.</div>`;
       }
