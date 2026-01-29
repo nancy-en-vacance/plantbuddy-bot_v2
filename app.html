@@ -113,6 +113,8 @@
       box-shadow:0 6px 18px rgba(42,45,52,.06);
     }
 
+    .dbg{margin-top:12px;padding:10px 12px;border-radius:12px;border:1px solid rgba(0,0,0,.08);background:rgba(0,0,0,.03);color:#111;font-size:12px;white-space:pre-wrap;}
+
     .error{
       margin-top:12px;
       padding:12px 14px;
@@ -380,6 +382,8 @@
     // header
     toast: document.getElementById("toast"),
 
+    dbg: document.getElementById("dbg"),
+
     // sheet
     overlay: document.getElementById("overlay"),
     sheet: document.getElementById("sheet"),
@@ -476,6 +480,7 @@ const state = {
   }
 
   function apiFetch(path, opts){
+    dbg("apiFetch: " + path);
     opts = opts || {};
     opts.headers = Object.assign({}, opts.headers || {}, {
       "Content-Type": "application/json",
@@ -576,25 +581,30 @@ const state = {
 
 
   async function loadToday(){
+    dbg("loadToday() start");
     state.loading = true;
     state.items = [];
     state.selected = new Set();
     state.filter = "all";
     updateButtons();
     els.list.innerHTML = `<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>`;
+    dbg("skeletons rendered");
     clearError(els.error);
 
     let done = false;
     const watchdog = setTimeout(()=>{
       if (done) return;
       state.loading = false;
+      dbg("watchdog timeout fired");
       showError(els.error, "Не удалось загрузить данные: таймаут. Скорее всего, /api/today не отвечает или отклоняет запрос.");
       els.list.innerHTML = `<div class="empty">Не удалось загрузить данные.</div>`;
       updateButtons();
     }, 13000);
 
     try{
+      dbg("fetch /api/today");
       const data = await apiFetch("/api/today", {method:"GET"});
+      dbg("fetch resolved");
       done = true;
       clearTimeout(watchdog);
       state.items = (data && Array.isArray(data.items)) ? data.items : [];
@@ -605,6 +615,7 @@ const state = {
       clearTimeout(watchdog);
       state.loading = false;
       const msg = (e && e.message) ? e.message : "Ошибка загрузки";
+      dbg("catch: " + msg);
       showError(els.error, msg);
       els.list.innerHTML = `<div class="empty">Не удалось загрузить данные.</div>`;
       try{ toast("⚠️" + msg); }catch(_){}
@@ -857,6 +868,31 @@ const state = {
 
   
   // helpers
+  const DEBUG = /[?&]debug=1/.test(location.search);
+  function dbg(msg){
+    if (!DEBUG) return;
+    if (els.dbg) {
+      els.dbg.style.display = "block";
+      const t = new Date().toLocaleTimeString();
+      els.dbg.textContent += `[${t}] ${msg}\n`;
+    }
+  }
+
+  window.addEventListener("error", (e)=>{
+    try{
+      dbg("JS error: " + (e && e.message ? e.message : String(e)));
+      showError(els.error, "JS error: " + (e && e.message ? e.message : String(e)));
+    }catch(_){}
+  });
+  window.addEventListener("unhandledrejection", (e)=>{
+    try{
+      const msg = e && e.reason && e.reason.message ? e.reason.message : String(e.reason || e);
+      dbg("Promise rejection: " + msg);
+      showError(els.error, "Promise rejection: " + msg);
+    }catch(_){}
+  });
+
+
   function daysLeftText(p){
     try{
       const norm = p && p.water_every_days!=null ? Number(p.water_every_days) : null;
