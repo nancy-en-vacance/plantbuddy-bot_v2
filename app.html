@@ -294,8 +294,8 @@
     </header>
 
 <div class="tabs" role="tablist">
-      <button class="tab active" id="tabToday">📅Сегодня</button>
-      <button class="tab" id="tabPlants">🪴Мои растения</button>
+      <button class="tab active" id="tabToday">⏳Today</button>
+      <button class="tab" id="tabPlants">🌿My Plants</button>
       <button class="tab" id="tabNorms">💦Нормы</button>
     </div>
 
@@ -310,7 +310,7 @@
       <div class="error" id="error" style="display:none"></div>
 
       <div class="todayAction" id="todayAction" style="display:none">
-        <button class="btn" id="btnWaterInline" disabled>💦Отметить полив</button>
+        <button class="btn" id="btnWaterInline" disabled>💧Watered</button>
       </div>
     </section>
 
@@ -318,10 +318,10 @@
     <section class="screen" id="screenPlants">
       <div class="row" style="margin:2px 0 10px;">
         <div class="inputrow">
-          <button class="btn2 accent toggle active" id="plantsActive">Активные</button>
-          <button class="btn2 accent toggle" id="plantsArchived">Архив</button>
+          <button class="btn2 accent toggle active" id="plantsActive">Active</button>
+          <button class="btn2 accent toggle" id="plantsArchived">Archive</button>
         </div>
-        <button class="btn2 accent" id="btnAddPlant">➕Добавить</button>
+        <button class="btn2 accent" id="btnAddPlant">+ Add Plant</button>
       </div>
 
       <div class="list" id="plantsList">
@@ -336,7 +336,7 @@
     <!-- SCREEN: NORMS -->
     <section class="screen" id="screenNorms">
       <div class="row" style="margin:2px 0 10px;">
-        <div class="mini">Норма = раз в N дней (для активных растений)</div>
+        <div class="mini">Норма = раз в N days (для активных растений)</div>
         <button class="btn2" id="btnRefreshNorms">Обновить</button>
       </div>
 
@@ -516,9 +516,9 @@ const state = {
 
         if (!items.length){
       if (state.filter==="all"){
-        els.list.innerHTML = `<div class="empty">🪴 Сегодня все ок</div>`;
+        els.list.innerHTML = `<div class="empty">All set for today!</div>`;
       } else {
-        els.list.innerHTML = `<div class="empty">Сегодня все ок</div>`;
+        els.list.innerHTML = `<div class="empty">All set for today!</div>`;
       }
     } else {
       els.list.innerHTML = items.map(it=>{
@@ -526,10 +526,10 @@ const state = {
         const status = it.status || "unknown";
         const badgeText = status==="overdue" ? "Просрочено" :
                           status==="due" ? "Пора" :
-                          status==="ok" ? (it.due_in_days!=null ? `Через ${it.due_in_days} дней` : "Ок") :
+                          status==="ok" ? (it.due_in_days!=null ? `Через ${it.due_in_days} days` : "Ок") :
                           "Настроить";
-        const meta1 = it.days_since_last_watering==null ? "Полив: нет данных" : `Полив: ${it.days_since_last_watering} дней назад`;
-        const meta2 = it.norm_days==null ? "норма: —" : `норма: ${it.norm_days} дней`;
+        const meta1 = it.days_since_last_watering==null ? "Полив: нет данных" : `Полив: ${it.days_since_last_watering} days назад`;
+        const meta2 = it.norm_days==null ? "норма: —" : `норма: ${it.norm_days} days`;
         return `
           <button class="card ${checked ? "selected" : ""}" data-id="${it.id}">
             <div class="top">
@@ -647,7 +647,7 @@ const state = {
     }
 
     els.plantsList.innerHTML = state.plants.map(p=>{
-      const norm = p.water_every_days==null ? "норма: —" : `норма: ${p.water_every_days} дней`;
+      const norm = p.water_every_days==null ? "норма: —" : `норма: ${p.water_every_days} days`;
       const lw = p.last_watered_at ? `последний полив: ${formatDate(p.last_watered_at)}` : "последний полив: —";
       return `
         <div class="card plantcard" data-id="${p.id}">
@@ -676,7 +676,7 @@ const state = {
     state.sheetPlantId = id;
 
     els.sheetTitle.textContent = p.name || "Растение";
-    const norm = p.water_every_days==null ? "норма: —" : `норма: ${p.water_every_days} дней`;
+    const norm = p.water_every_days==null ? "норма: —" : `норма: ${p.water_every_days} days`;
     const lw = p.last_watered_at ? `последний полив: ${formatDate(p.last_watered_at)}` : "последний полив: —";
     els.sheetMeta.innerHTML = `<span>${norm}</span><span class="dot">•</span><span>${lw}</span>`;
 
@@ -719,7 +719,7 @@ const state = {
           }
           if (act==="norm"){
             const cur = state.plants.find(x=>x.id===state.sheetPlantId);
-            const v = prompt("Норма полива (в днях). Пусто = убрать норму.", cur && cur.water_every_days!=null ? String(cur.water_every_days) : "");
+            const v = prompt("Норма полива (в daysх). Пусто = убрать норму.", cur && cur.water_every_days!=null ? String(cur.water_every_days) : "");
             if (v === null) return;
             const days = v.trim()==="" ? null : Number(v);
             if (days !== null && (!Number.isFinite(days) || days<=0 || days>365)) { alert("Введи число 1–365"); return; }
@@ -801,7 +801,7 @@ const state = {
         <div class="card" style="cursor:default">
           <div class="top">
             <div class="name">${escapeHtml(p.name || "")}</div>
-            <span class="badge ok">${p.water_every_days} дней</span>
+            <span class="badge ok">${p.water_every_days} days</span>
           </div>
           <div class="actions" style="margin-top:10px">
             <button class="btn2" data-act="edit" data-id="${p.id}">✏️Изменить</button>
@@ -819,7 +819,7 @@ const state = {
         try{
           if (act==="edit"){
             const cur = state.norms.find(x=>x.id===id);
-            const v = prompt("Новая норма (в днях):", cur ? String(cur.water_every_days) : "");
+            const v = prompt("Новая норма (в daysх):", cur ? String(cur.water_every_days) : "");
             if (v === null) return;
             const days = Number(v);
             if (!Number.isFinite(days) || days<=0 || days>365) { alert("Введи число 1–365"); return; }
@@ -867,8 +867,8 @@ const state = {
       const ms = now.getTime() - last.getTime();
       const daysSince = Math.floor(ms / (1000*60*60*24));
       const left = norm - daysSince;
-      if (left >= 0) return `до полива — ${left} дней`;
-      return `просрочено — ${Math.abs(left)} дней`;
+      if (left >= 0) return `water in ${left} days`;
+      return `overdue by ${Math.abs(left)} days`;
     }catch(e){ return null; }
   }
 
