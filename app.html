@@ -6,21 +6,43 @@
   <title>PlantBuddy</title>
   <style>
 
-    :root{
-      --bg:#F6FBFD;
-      --card:#FFFFFF;
-      --text:#2A2D34;
-      --muted:#4B5563;
-      --border:#D7E2E8;
-      --accent:#30C5FF;
-      --accent2:#5C946E;
-      --danger:#D64545;
-      --warn:#C57F1E;
-      --shadow:0 10px 30px rgba(42,45,52,.10);
-      --radius:18px;
-    }
 
-    html,body{height:100%;}
+
+/* --- Fonts (Canva match) --- */
+@import url('https://fonts.googleapis.com/css2?family=Ubuntu:wght@400;500;700&display=swap');
+
+@font-face{
+  font-family:'Bubblebody Neue';
+  src:
+    url('Bubbleboddy Neue Trial Regular.woff2') format('woff2'),
+    url('Bubbleboddy Neue Trial Regular.woff') format('woff');
+  font-weight:400;
+  font-style:normal;
+  font-display:swap;
+}
+
+    :root{
+  --bg:#fffef7;
+  --card:#FFFFFF;
+  --text:#545454;
+  --muted:#a6a6a6;
+  --border:rgba(84,84,84,.35);
+  --accent:#0097b2;
+  --accentSoft:#b3dfea;
+  --brand:#7ed957;
+  --disabled:#d9d9d9;
+  --danger:#D64545;
+  --warn:#C57F1E;
+  --shadow:0 10px 30px rgba(84,84,84,.10);
+  --radius:18px;
+}
+
+    html,body{
+  margin:0;
+  font-family:'Ubuntu', -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Ubuntu,"Helvetica Neue",Arial,"Noto Sans",sans-serif;
+  background:var(--bg);
+  color:var(--text);
+}
     body{
       margin:0;
       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Ubuntu,"Helvetica Neue",Arial,"Noto Sans",sans-serif;
@@ -32,9 +54,9 @@
 
     /* Header */
     .hrow{display:flex;align-items:center;gap:10px;margin-top:8px;}
-    .hicon{width:42px;height:42px;border-radius:14px;display:flex;align-items:center;justify-content:center;background:#fff;border:1px solid var(--border);box-shadow:0 4px 14px rgba(42,45,52,.06);}
-    h1{margin:0;font-size:30px;font-weight:900;letter-spacing:-0.02em;}
-    .sub{margin:8px 0 0;color:var(--muted);}
+    .hicon{width:42px;height:42px;border-radius:14px;display:flex;align-items:center;justify-content:center;background:#fff;border:2px solid var(--border);box-shadow:none;}
+    h1{margin:0;font-size:42px;font-weight:400;letter-spacing:-0.01em;font-family:'Bubblebody Neue','Ubuntu',sans-serif;color:var(--brand);}
+    .sub{margin:6px 0 0;color:var(--text);opacity:.9;font-size:18px;}
 
     /* Stats */
     .stats{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;}
@@ -53,15 +75,15 @@
     .list{margin-top:16px;display:flex;flex-direction:column;gap:12px;}
 
     .card{
-      display:flex;gap:12px;align-items:flex-start;
-      padding:14px;
-      border:1px solid var(--border);
-      border-radius:var(--radius);
-      background:var(--card);
-      box-shadow:0 8px 24px rgba(42,45,52,.08);
-      cursor:pointer;
-      user-select:none;
-    }
+  display:flex;gap:12px;align-items:center;
+  padding:18px 18px;
+  border:2px solid var(--border);
+  border-radius:999px;
+  background:#FFFFFF;
+  box-shadow:none;
+  cursor:pointer;
+  user-select:none;
+}
     .card:active{transform:translateY(1px);}
 
     .check{width:22px;height:22px;margin-top:4px;accent-color:var(--accent2);}
@@ -139,25 +161,21 @@
     .linkbtn:disabled{opacity:.55;cursor:default;}
 
     .btn{
-      width:100%;
-      display:block;
-      border:none;
-      border-radius:16px;
-      padding:16px 18px;
-      font-weight:900;
-      font-size:16px;
-      color:#0A1B22;
-      background:var(--accent);
-      box-shadow:0 10px 25px rgba(48,197,255,.25);
-      cursor:pointer;
-    }
+  width:100%;
+  display:block;
+  border:2px solid var(--border);
+  border-radius:999px;
+  padding:18px 18px;
+  font-weight:400;
+  font-size:34px;
+  font-family:'Bubblebody Neue','Ubuntu',sans-serif;
+  color:var(--text);
+  background:var(--accentSoft);
+  box-shadow:none;
+  cursor:pointer;
+}
 
-    .btn.inactive{
-      background:#E5E7EB;
-      color:#6B7280;
-      box-shadow:none;
-      cursor:default;
-    }
+    .btn.inactive{background:var(--disabled);color:var(--muted);box-shadow:none;cursor:default;}
     .btn:disabled{opacity:.55;box-shadow:none;cursor:default;}
 
     .skeleton{
@@ -176,10 +194,25 @@
   
 
     /* --- Tabs / Screens --- */
-    .tabs{display:flex;gap:10px;margin:12px 0 10px;flex-wrap:wrap}
-    .tab{border:1px solid var(--border);background:var(--card);color:var(--muted);padding:10px 12px;border-radius:999px;
-      font-weight:700; box-shadow:0 4px 14px rgba(42,45,52,.06); cursor:pointer}
-    .tab.active{color:var(--text);border-color:rgba(48,197,255,.55); box-shadow:0 10px 22px rgba(48,197,255,.14)}
+    .tabs{display:flex;gap:18px;margin:22px 0 18px;flex-wrap:wrap;justify-content:center}
+.tab{
+  border:2px solid var(--border);
+  background:var(--accentSoft);
+  color:#ffffff;
+  padding:14px 20px;
+  border-radius:999px;
+  font-weight:400;
+  font-size:34px;
+  font-family:'Bubblebody Neue','Ubuntu',sans-serif;
+  box-shadow:none;
+  cursor:pointer
+}
+.tab.active{
+  background:var(--accentSoft);
+  color:var(--accent);
+  border-color:var(--border);
+  box-shadow:none
+}
     .screen{display:none}
     .screen.active{display:block}
 
@@ -259,6 +292,11 @@
     #tabNorms{display:none!important;}
     #screenNorms{display:none!important;}
 
+  
+
+  /* Canva: hide advice banner in mini app */
+  #adviceBanner{display:none!important;}
+
   </style>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
@@ -266,14 +304,14 @@
 <body>
   <div class="wrap">
     <div class="hrow">
-      <div class="hicon" id="hicon">📅</div>
-      <h1 id="htitle">Сегодня</h1>
+      <div class="hicon" id="hicon">🌱</div>
+      <h1 id="htitle">PlantBuddy</h1>
     </div>
-    <p class="sub" id="subtitle">Загружаю…</p>
+    <p class="sub" id="subtitle">Знаю, когда поливать твои растения</p>
 
     <div class="tabs" role="tablist">
-      <button class="tab active" id="tabToday">📅Сегодня</button>
-      <button class="tab" id="tabPlants">🪴Растения</button>
+      <button class="tab active" id="tabToday">Сегодня</button>
+      <button class="tab" id="tabPlants">Мои растения</button>
       <button class="tab" id="tabNorms">💦Нормы</button>
     </div>
 
@@ -336,7 +374,7 @@
         <button class="linkbtn" id="btnSelectNeed" disabled>Выбрать: пора + просрочено</button>
         <button class="linkbtn" id="btnClear" disabled>Сбросить</button>
       </div>
-      <button class="btn" id="btnWater" disabled>✅Отметить полив</button>
+      <button class="btn" id="btnWater" disabled>💦Отметить полив</button>
     </div>
   </div>
 
