@@ -319,6 +319,18 @@
 
 /* In case old sub-elements still exist */
 #plantsList .small, #plantsList .tag, #plantsList .chev {display:none!important;}
+
+
+/* --- Step 2.1: Canva spacing polish --- */
+.wrap{max-width:620px;margin:0 auto;padding:18px 18px 120px;}
+.tabs{gap:18px;margin:22px 0 22px;}
+.tab{min-width:260px;text-align:center;}
+
+/* Lists centered like Canva */
+#plantsList, #list{display:flex;flex-direction:column;gap:16px;align-items:center;}
+#plantsList .plantcard, #list .card{width:100%;max-width:520px;}
+#plantsList .plantcard{margin:0;}
+#plantsList .title.onlyline{font-size:24px;font-weight:600;}
 </style>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
