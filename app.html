@@ -291,6 +291,34 @@
   .empty{display:flex;align-items:center;justify-content:center;min-height:50vh;font-size:30px;color:#000;text-align:center;font-family:'Ubuntu',sans-serif;}
 
   .stats,.filters,.subline{display:none!important;}
+
+
+/* --- Step 2: Plants screen (Canva match) --- */
+
+/* Hide plants technical UI blocks (keep logic, hide visuals) */
+#plantsActions, #plantsTop, .plantsActions, .plantsToolbar, .plantsBar, .plantsHeader,
+#btnAddPlant, #btnPlantsMode, #plantsModePills, .modepills, .pillrow {display:none!important;}
+
+/* Plants list rows */
+#plantsList .plantcard{
+  background:#fff;
+  border:2px solid rgba(84,84,84,.35);
+  border-radius:999px;
+  padding:18px 20px;
+  box-shadow:none;
+}
+#plantsList .title.onlyline{
+  font-family:'Ubuntu',sans-serif;
+  font-weight:500;
+  font-size:22px;
+  color:var(--text);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+/* In case old sub-elements still exist */
+#plantsList .small, #plantsList .tag, #plantsList .chev {display:none!important;}
 </style>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
@@ -750,18 +778,44 @@ const state = {
     }
 
     els.plantsList.innerHTML = state.plants.map(p=>{
-      const norm = p.water_every_days==null ? "норма: —" : `норма: ${p.water_every_days}д`;
-      const lw = p.last_watered_at ? `посл.полив: ${formatDate(p.last_watered_at)}` : "посл.полив: —";
+      const now = new Date();
+      const name = escapeHtml(p.name || "");
+      let suffix = "";
+
+      const every = (p.water_every_days==null) ? null : Number(p.water_every_days);
+      const last = p.last_watered_at ? new Date(p.last_watered_at) : null;
+
+      const plural = (n)=> {
+        const a = Math.abs(n)%100;
+        const b = a%10;
+        if (a>10 && a<20) return "дней";
+        if (b==1) return "день";
+        if (b>=2 && b<=4) return "дня";
+        return "дней";
+      };
+
+      if (every && last && !isNaN(last.getTime())){
+        const msPerDay = 24*60*60*1000;
+        const daysSince = Math.floor((now - last) / msPerDay);
+        const dueIn = every - daysSince;
+
+        if (dueIn > 0){
+          suffix = ` (${dueIn} ${plural(dueIn)} до полива)`;
+        } else if (dueIn === 0){
+          suffix = ` (полить сегодня)`;
+        } else {
+          const od = Math.abs(dueIn);
+          suffix = ` (просрочено на ${od} ${plural(od)})`;
+        }
+      } else if (every && !last){
+        suffix = ` (полить сегодня)`;
+      } else if (!every){
+        suffix = ` (норма не задана)`;
+      }
+
       return `
         <div class="card plantcard" data-id="${p.id}">
-          <div class="meta" style="flex:1;min-width:0">
-            <div class="top" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
-              <div class="title">${escapeHtml(p.name || "")}</div>
-              <span class="tag unknown" style="background:#F8FAFC">${norm}</span>
-            </div>
-            <div class="small">${lw}</div>
-          </div>
-          <div class="chev">›</div>
+          <div class="title onlyline">${name}${suffix}</div>
         </div>
       `;
     }).join("");
