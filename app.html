@@ -288,7 +288,7 @@
         <div class="brand-emoji" aria-hidden="true">🌱</div>
         <div class="brand-text">
           <div class="brand-title">PlantBuddy</div>
-          <div class="brand-sub">Знаю, когда поливать твои растения</div>
+          <div class="brand-sub">I know when your plants need water</div>
         </div>
       </div>
     </header>
@@ -296,7 +296,7 @@
 <div class="tabs" role="tablist">
       <button class="tab active" id="tabToday">⏳Today</button>
       <button class="tab" id="tabPlants">🌿My Plants</button>
-      <button class="tab" id="tabNorms">💦Нормы</button>
+      <button class="tab" id="tabNorms">💦Watering norms</button>
     </div>
 
     <!-- SCREEN: TODAY -->
@@ -336,8 +336,8 @@
     <!-- SCREEN: NORMS -->
     <section class="screen" id="screenNorms">
       <div class="row" style="margin:2px 0 10px;">
-        <div class="mini">Норма = раз в N days (для активных растений)</div>
-        <button class="btn2" id="btnRefreshNorms">Обновить</button>
+        <div class="mini">Norm = every N days (for active plants)</div>
+        <button class="btn2" id="btnRefreshNorms">Refresh</button>
       </div>
 
       <div class="list" id="normsList">
@@ -357,7 +357,7 @@
   <div class="sheet" id="sheet">
     <div class="sheetcard" role="dialog" aria-modal="true">
       <div class="sheethead">
-        <div class="sheettitle" id="sheetTitle">Растение</div>
+        <div class="sheettitle" id="sheetTitle">Plant</div>
         <div class="sheetmeta" id="sheetMeta"></div>
       </div>
       <div class="sheetactions" id="sheetActions"></div>
@@ -480,7 +480,7 @@ const state = {
     });
 
     const timeoutMs = 12000;
-    const timeout = new Promise((_, reject)=>setTimeout(()=>reject(new Error(`Таймаут загрузки (${timeoutMs/1000}s).`)), timeoutMs));
+    const timeout = new Promise((_, reject)=>setTimeout(()=>reject(new Error("That took too long. Try again.")), timeoutMs));
 
     const req = fetch(path, opts).then(async (res)=>{
       const text = await res.text();
@@ -524,12 +524,12 @@ const state = {
       els.list.innerHTML = items.map(it=>{
         const checked = state.selected.has(it.id);
         const status = it.status || "unknown";
-        const badgeText = status==="overdue" ? "Просрочено" :
-                          status==="due" ? "Пора" :
-                          status==="ok" ? (it.due_in_days!=null ? `Через ${it.due_in_days} days` : "Ок") :
-                          "Настроить";
-        const meta1 = it.days_since_last_watering==null ? "Полив: нет данных" : `Полив: ${it.days_since_last_watering} days назад`;
-        const meta2 = it.norm_days==null ? "норма: —" : `норма: ${it.norm_days} days`;
+        const badgeText = status==="overdue" ? "Overdue" :
+                          status==="due" ? "Due" :
+                          status==="ok" ? (it.due_in_days!=null ? `In ${it.due_in_days} days` : "OK") :
+                          "Settings";
+        const meta1 = it.days_since_last_watering==null ? "Watered: no data" : `Watered: ${it.days_since_last_watering} days ago`;
+        const meta2 = it.norm_days==null ? "norm: —" : `norm: ${it.norm_days} days`;
         return `
           <button class="card ${checked ? "selected" : ""}" data-id="${it.id}">
             <div class="top">
@@ -587,8 +587,8 @@ const state = {
     const watchdog = setTimeout(()=>{
       if (done) return;
       state.loading = false;
-      showError(els.error, "Не удалось загрузить данные: таймаут. Скорее всего, /api/today не отвечает или отклоняет запрос.");
-      els.list.innerHTML = `<div class="empty">Не удалось загрузить данные.</div>`;
+      showError(els.error, "Couldn’t load Today. Try again.");
+      els.list.innerHTML = `<div class="empty">Loading failed.</div>`;
       updateButtons();
     }, 13000);
 
@@ -603,9 +603,9 @@ const state = {
       done = true;
       clearTimeout(watchdog);
       state.loading = false;
-      const msg = (e && e.message) ? e.message : "Ошибка загрузки";
+      const msg = (e && e.message) ? e.message : "Something didn’t load. Try again.";
       showError(els.error, msg);
-      els.list.innerHTML = `<div class="empty">Не удалось загрузить данные.</div>`;
+      els.list.innerHTML = `<div class="empty">Loading failed.</div>`;
       try{ toast("⚠️" + msg); }catch(_){}
     }finally{
       updateButtons();
@@ -620,10 +620,10 @@ const state = {
     try{
       const ids = Array.from(state.selected);
       const res = await apiFetch("/api/water", {method:"POST", body: JSON.stringify({plant_ids: ids})});
-      toast(`✅Полив отмечен: ${res && res.updated!=null ? res.updated : ids.length}`);
+      toast(`✅Watered saved: ${res && res.updated!=null ? res.updated : ids.length}`);
       await loadToday();
     }catch(e){
-      showError(els.error, e && e.message ? e.message : "Ошибка сохранения");
+      showError(els.error, e && e.message ? e.message : "Oops. Something broke. saving");
       state.saving = false;
       updateButtons();
     }finally{
@@ -642,13 +642,13 @@ const state = {
       return;
     }
     if (!state.plants.length){
-      els.plantsList.innerHTML = `<div class="empty">${state.plantsMode==="active" ? "Нет активных растений." : "Архив пуст."}</div>`;
+      els.plantsList.innerHTML = `<div class="empty">${state.plantsMode==="active" ? "No active plants.." : "Archive is empty."}</div>`;
       return;
     }
 
     els.plantsList.innerHTML = state.plants.map(p=>{
-      const norm = p.water_every_days==null ? "норма: —" : `норма: ${p.water_every_days} days`;
-      const lw = p.last_watered_at ? `последний полив: ${formatDate(p.last_watered_at)}` : "последний полив: —";
+      const norm = p.water_every_days==null ? "norm: —" : `norm: ${p.water_every_days} days`;
+      const lw = p.last_watered_at ? `last watered: ${formatDate(p.last_watered_at)}` : "last watered: —";
       return `
         <div class="card plantcard" data-id="${p.id}">
           <div class="meta" style="flex:1;min-width:0">
@@ -675,23 +675,23 @@ const state = {
 
     state.sheetPlantId = id;
 
-    els.sheetTitle.textContent = p.name || "Растение";
-    const norm = p.water_every_days==null ? "норма: —" : `норма: ${p.water_every_days} days`;
-    const lw = p.last_watered_at ? `последний полив: ${formatDate(p.last_watered_at)}` : "последний полив: —";
+    els.sheetTitle.textContent = p.name || "Plant";
+    const norm = p.water_every_days==null ? "norm: —" : `norm: ${p.water_every_days} days`;
+    const lw = p.last_watered_at ? `last watered: ${formatDate(p.last_watered_at)}` : "last watered: —";
     els.sheetMeta.innerHTML = `<span>${norm}</span><span class="dot">•</span><span>${lw}</span>`;
 
     const isActive = state.plantsMode==="active";
     const actions = [];
 
     if (isActive){
-      actions.push(`<button class="actionbtn neutral" data-act="rename">✏️Переименовать</button>`);
-      actions.push(`<button class="actionbtn" data-act="norm">💦Изменить норму</button>`);
-      actions.push(`<button class="actionbtn danger" data-act="archive">🗄️В архив</button>`);
+      actions.push(`<button class="actionbtn neutral" data-act="rename">✏️Rename</button>`);
+      actions.push(`<button class="actionbtn" data-act="norm">💦Change norm</button>`);
+      actions.push(`<button class="actionbtn danger" data-act="archive">🗄️Archive</button>`);
     } else {
-      actions.push(`<button class="actionbtn accent" data-act="restore">↩️Восстановить</button>`);
-      actions.push(`<button class="actionbtn neutral" data-act="rename">✏️Переименовать</button>`);
+      actions.push(`<button class="actionbtn accent" data-act="restore">↩️Restore</button>`);
+      actions.push(`<button class="actionbtn neutral" data-act="rename">✏️Rename</button>`);
     }
-    actions.push(`<button class="actionbtn ghost" data-act="close">Закрыть</button>`);
+    actions.push(`<button class="actionbtn ghost" data-act="close">Close</button>`);
 
     els.sheetActions.innerHTML = actions.join("");
 
@@ -710,39 +710,39 @@ const state = {
         try{
           if (act==="rename"){
             const cur = state.plants.find(x=>x.id===state.sheetPlantId);
-            const name = prompt("Новое имя растения:", cur ? cur.name : "");
+            const name = prompt("New name plants:", cur ? cur.name : "");
             if (!name) return;
             await apiFetch(`/api/plants/${state.sheetPlantId}`, {method:"PATCH", body: JSON.stringify({name})});
-            toast("✅Переименовано");
+            toast("✅Renamed");
             closePlantSheet();
             await loadPlants();
           }
           if (act==="norm"){
             const cur = state.plants.find(x=>x.id===state.sheetPlantId);
-            const v = prompt("Норма полива (в daysх). Пусто = убрать норму.", cur && cur.water_every_days!=null ? String(cur.water_every_days) : "");
+            const v = prompt("Norm (in days). Leave empty to clear.", cur && cur.water_every_days!=null ? String(cur.water_every_days) : "");
             if (v === null) return;
             const days = v.trim()==="" ? null : Number(v);
-            if (days !== null && (!Number.isFinite(days) || days<=0 || days>365)) { alert("Введи число 1–365"); return; }
+            if (days !== null && (!Number.isFinite(days) || days<=0 || days>365)) { alert("Enter a number 1–365"); return; }
             await apiFetch(`/api/plants/${state.sheetPlantId}/norm`, {method:"PATCH", body: JSON.stringify({days})});
-            toast("✅Норма сохранена");
+            toast("✅Norm saved");
             closePlantSheet();
             await loadPlants();
           }
           if (act==="archive"){
-            if (!confirm("Убрать растение в архив?")) return;
+            if (!confirm("Archive this plant?")) return;
             await apiFetch(`/api/plants/${state.sheetPlantId}/archive`, {method:"POST"});
-            toast("🗄️В архиве");
+            toast("🗄️Archived");
             closePlantSheet();
             await loadPlants();
           }
           if (act==="restore"){
             await apiFetch(`/api/plants/${state.sheetPlantId}/restore`, {method:"POST"});
-            toast("✅Восстановлено");
+            toast("✅Restored");
             closePlantSheet();
             await loadPlants();
           }
         }catch(e){
-          showError(els.plantsError, e && e.message ? e.message : "Ошибка");
+          showError(els.plantsError, e && e.message ? e.message : "Oops. Something broke.");
           closePlantSheet();
         }
       });
@@ -768,20 +768,20 @@ const state = {
       renderPlants();
     }catch(e){
       state.plantsLoading = false;
-      showError(els.plantsError, e && e.message ? e.message : "Ошибка загрузки");
+      showError(els.plantsError, e && e.message ? e.message : "Something didn’t load. Try again.");
       renderPlants();
     }  }
 
   async function addPlant(){
-    const name = prompt("Название растения:");
+    const name = prompt("Name plants:");
     if (!name) return;
     clearError(els.plantsError);
     try{
       await apiFetch(`/api/plants`, {method:"POST", body: JSON.stringify({name})});
-      toast("✅Добавлено");
+      toast("✅Added");
       await loadPlants();
     }catch(e){
-      showError(els.plantsError, e && e.message ? e.message : "Ошибка добавления");
+      showError(els.plantsError, e && e.message ? e.message : "Oops. Something broke. adding");
     }
   }
 
@@ -793,7 +793,7 @@ const state = {
       return;
     }
     if (!state.norms.length){
-      els.normsList.innerHTML = `<div class="empty">Нет растений с заданной нормой.</div>`;
+      els.normsList.innerHTML = `<div class="empty">No plants with this norm.</div>`;
       return;
     }
     els.normsList.innerHTML = state.norms.map(p=>{
@@ -804,8 +804,8 @@ const state = {
             <span class="badge ok">${p.water_every_days} days</span>
           </div>
           <div class="actions" style="margin-top:10px">
-            <button class="btn2" data-act="edit" data-id="${p.id}">✏️Изменить</button>
-            <button class="btn2 danger" data-act="clear" data-id="${p.id}">🧹Убрать норму</button>
+            <button class="btn2" data-act="edit" data-id="${p.id}">✏️Change</button>
+            <button class="btn2 danger" data-act="clear" data-id="${p.id}">🧹Remove norm</button>
           </div>
         </div>
       `;
@@ -819,22 +819,22 @@ const state = {
         try{
           if (act==="edit"){
             const cur = state.norms.find(x=>x.id===id);
-            const v = prompt("Новая норма (в daysх):", cur ? String(cur.water_every_days) : "");
+            const v = prompt("New norm (in days):", cur ? String(cur.water_every_days) : "");
             if (v === null) return;
             const days = Number(v);
-            if (!Number.isFinite(days) || days<=0 || days>365) { alert("Введи число 1–365"); return; }
+            if (!Number.isFinite(days) || days<=0 || days>365) { alert("Enter a number 1–365"); return; }
             await apiFetch(`/api/plants/${id}/norm`, {method:"PATCH", body: JSON.stringify({days})});
-            toast("✅Норма обновлена");
+            toast("✅Norm updated");
             await loadNorms();
           }
           if (act==="clear"){
-            if (!confirm("Убрать норму?")) return;
+            if (!confirm("Remove norm?")) return;
             await apiFetch(`/api/plants/${id}/norm`, {method:"PATCH", body: JSON.stringify({days: null})});
-            toast("✅Норма убрана");
+            toast("✅Norm cleared");
             await loadNorms();
           }
         }catch(e){
-          showError(els.normsError, e && e.message ? e.message : "Ошибка");
+          showError(els.normsError, e && e.message ? e.message : "Oops. Something broke.");
         }
       });
     });
@@ -850,7 +850,7 @@ const state = {
       renderNorms();
     }catch(e){
       state.normsLoading = false;
-      showError(els.normsError, e && e.message ? e.message : "Ошибка загрузки");
+      showError(els.normsError, e && e.message ? e.message : "Something didn’t load. Try again.");
       renderNorms();
     }  }
 
@@ -915,7 +915,7 @@ els.tabPlants.addEventListener("click", ()=>setScreen("plants"));
   // init
   if (!initData){
     // For local browser usage (non-TG). We still allow UI to render; API may reject.
-    toast("ℹ️Открой из Telegram для полного доступа");
+    toast("ℹ️Open in Telegram for full access");
   }
 
   loadToday();
