@@ -57,6 +57,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.encoders import jsonable_encoder
+from fastapi.staticfiles import StaticFiles
 
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, WebAppInfo, InlineKeyboardMarkup, InlineKeyboardButton, MenuButtonWebApp
 from telegram.ext import Application, CommandHandler, ContextTypes
@@ -77,6 +78,8 @@ if not BOT_TOKEN or not BASE_URL:
     raise RuntimeError("BOT_TOKEN and BASE_URL must be set")
 
 app = FastAPI()
+# Static assets for Mini App (e.g., empty-state images)
+app.mount("/assets", StaticFiles(directory="assets"), name="assets")
 tg_app = Application.builder().token(BOT_TOKEN).build()
 
 MENU_TODAY = "📅План на сегодня"
