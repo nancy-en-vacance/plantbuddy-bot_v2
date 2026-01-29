@@ -45,8 +45,9 @@
 .brand-sub{color:var(--brandText);font-size:14px;line-height:1.15;}
 
 /* Tabs */
-.tabs{display:flex;gap:10px;margin:14px 0 10px;flex-wrap:wrap}
-.tab{border:1px solid var(--border);background:var(--card);color:var(--muted);padding:10px 12px;border-radius:999px;font-weight:800; box-shadow:0 4px 14px rgba(42,45,52,.06); cursor:pointer}
+.tabs{display:flex;gap:12px;margin:14px 0 10px;flex-wrap:wrap}
+    .seg{display:flex;gap:10px;flex-wrap:wrap}
+.tab{border:1px solid var(--border);background:var(--card);color:var(--muted);padding:16px 22px;border-radius:999px;font-weight:800; box-shadow:0 6px 18px rgba(42,45,52,.10); cursor:pointer}
 .tab.active{color:var(--tabAccent);border-color:rgba(0,151,178,.55); box-shadow:0 10px 22px rgba(0,151,178,.14)}
 .screen{display:none}
 .screen.active{display:block}
@@ -203,6 +204,8 @@
     .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
     .actions{display:flex;gap:8px;flex-wrap:wrap}
     .btn2{border:1px solid var(--border);background:#fff;color:var(--text);padding:10px 12px;border-radius:14px;font-weight:700;cursor:pointer}
+    .btn2.toggle{min-width:96px}
+    .btn2.toggle.active{background:rgba(48,197,255,.10)}
     .btn2:disabled{opacity:.6;cursor:default}
     .btn2.danger{border-color:rgba(214,69,69,.35); color:var(--danger)}
     .btn2.accent{border-color:rgba(48,197,255,.55)}
@@ -313,8 +316,8 @@
     <section class="screen" id="screenPlants">
       <div class="row" style="margin:2px 0 10px;">
         <div class="inputrow">
-          <button class="pill active" id="plantsActive">Активные</button>
-          <button class="pill" id="plantsArchived">Архив</button>
+          <button class="btn2 accent toggle active" id="plantsActive">Активные</button>
+          <button class="btn2 accent toggle" id="plantsArchived">Архив</button>
         </div>
         <button class="btn2 accent" id="btnAddPlant">➕Добавить</button>
       </div>
