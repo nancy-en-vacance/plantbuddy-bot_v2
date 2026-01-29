@@ -4,10 +4,13 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>PlantBuddy</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&display=swap" rel="stylesheet">
   <style>
 
     :root{
-      --bg:#F6FBFD;
+      --bg:#f9fff7;
       --card:#FFFFFF;
       --text:#2A2D34;
       --muted:#4B5563;
@@ -18,6 +21,9 @@
       --warn:#C57F1E;
       --shadow:0 10px 30px rgba(42,45,52,.10);
       --radius:18px;
+      --brand:#7ed957;
+      --brandText:#545454;
+      --tabAccent:#0097b2;
     }
 
     html,body{height:100%;}
@@ -30,13 +36,22 @@
 
     .wrap{max-width:520px;margin:0 auto;padding:18px 16px 120px;}
 
-    /* Header */
-    .hrow{display:flex;align-items:center;gap:10px;margin-top:8px;}
-    .hicon{width:42px;height:42px;border-radius:14px;display:flex;align-items:center;justify-content:center;background:#fff;border:1px solid var(--border);box-shadow:0 4px 14px rgba(42,45,52,.06);}
-    h1{margin:0;font-size:30px;font-weight:900;letter-spacing:-0.02em;}
-    .sub{margin:8px 0 0;color:var(--muted);}
+    /* Top brand */
+.topbar{margin-top:8px;}
+.brand{display:flex;align-items:flex-start;gap:10px;justify-content:flex-start;}
+.brand-emoji{font-size:42px;line-height:1;}
+.brand-text{display:flex;flex-direction:column;gap:2px;}
+.brand-title{font-family:"Fredoka", system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Arial, sans-serif;font-weight:700;font-size:28px;letter-spacing:-0.02em;color:var(--brand);line-height:1.05;}
+.brand-sub{color:var(--brandText);font-size:14px;line-height:1.15;}
 
-    /* Stats */
+/* Tabs */
+.tabs{display:flex;gap:10px;margin:14px 0 10px;flex-wrap:wrap}
+.tab{border:1px solid var(--border);background:var(--card);color:var(--muted);padding:10px 12px;border-radius:999px;font-weight:800; box-shadow:0 4px 14px rgba(42,45,52,.06); cursor:pointer}
+.tab.active{color:var(--tabAccent);border-color:rgba(0,151,178,.55); box-shadow:0 10px 22px rgba(0,151,178,.14)}
+.screen{display:none}
+.screen.active{display:block}
+
+/* Stats */
     .stats{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;}
     .pill{
       display:inline-flex;align-items:center;gap:8px;
@@ -160,6 +175,8 @@
     }
     .btn:disabled{opacity:.55;box-shadow:none;cursor:default;}
 
+    .empty{margin:28px 0;padding:26px 18px;border-radius:var(--radius);border:1px dashed rgba(125,217,87,.45);background:rgba(125,217,87,.06);color:var(--brandText);font-weight:900;text-align:center;}
+
     .skeleton{
       height:74px;
       border-radius:var(--radius);
@@ -179,7 +196,7 @@
     .tabs{display:flex;gap:10px;margin:12px 0 10px;flex-wrap:wrap}
     .tab{border:1px solid var(--border);background:var(--card);color:var(--muted);padding:10px 12px;border-radius:999px;
       font-weight:700; box-shadow:0 4px 14px rgba(42,45,52,.06); cursor:pointer}
-    .tab.active{color:var(--text);border-color:rgba(48,197,255,.55); box-shadow:0 10px 22px rgba(48,197,255,.14)}
+    .tab.active{color:var(--tabAccent);border-color:rgba(0,151,178,.55); box-shadow:0 10px 22px rgba(0,151,178,.14)}
     .screen{display:none}
     .screen.active{display:block}
 
@@ -231,7 +248,7 @@
     @keyframes sheetIn { to { transform: translateY(0); } }
 
     .sheethead{padding:14px 14px 10px; border-bottom:1px solid rgba(215,226,232,.7);}
-    .sheettitle{font-weight:900;font-size:16px;line-height:1.15;}
+    .sheettitle{font-weight:900;font-size:16px;line-height:1.15;color:var(--brand);}
     .sheetmeta{margin-top:6px;color:var(--muted);font-size:13px;line-height:1.3;display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
     .sheetmeta .dot{opacity:.6}
 
@@ -265,29 +282,28 @@
 
 <body>
   <div class="wrap">
-    <div class="hrow">
-      <div class="hicon" id="hicon">📅</div>
-      <h1 id="htitle">Сегодня</h1>
-    </div>
-    <p class="sub" id="subtitle">Загружаю…</p>
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-emoji" aria-hidden="true">🌱</div>
+        <div class="brand-text">
+          <div class="brand-title">PlantBuddy</div>
+          <div class="brand-sub">Знаю, когда поливать твои растения</div>
+        </div>
+      </div>
+    </header>
 
-    <div class="tabs" role="tablist">
+<div class="tabs" role="tablist">
       <button class="tab active" id="tabToday">📅Сегодня</button>
-      <button class="tab" id="tabPlants">🪴Растения</button>
+      <button class="tab" id="tabPlants">🪴Мои растения</button>
       <button class="tab" id="tabNorms">💦Нормы</button>
     </div>
 
     <!-- SCREEN: TODAY -->
     <section class="screen active" id="screenToday">
-      <div class="stats" id="stats" style="display:none"></div>
       <div class="list" id="list">
         <div class="skeleton"></div>
         <div class="skeleton"></div>
         <div class="skeleton"></div>
-      </div>
-
-      <div class="banner" id="adviceBanner">
-        ℹ️Совет по уходу за растениями (доступно только из чат-бота).
       </div>
 
       <div class="error" id="error" style="display:none"></div>
@@ -331,12 +347,7 @@
 
   <div class="btnbar" id="btnbar">
     <div class="bar">
-      <div class="barlinks" id="barlinks">
-        <button class="linkbtn" id="btnSelectAll" disabled>Выбрать всё</button>
-        <button class="linkbtn" id="btnSelectNeed" disabled>Выбрать: пора + просрочено</button>
-        <button class="linkbtn" id="btnClear" disabled>Сбросить</button>
-      </div>
-      <button class="btn" id="btnWater" disabled>✅Отметить полив</button>
+      <button class="btn" id="btnWater" disabled>💦Отметить полив</button>
     </div>
   </div>
 
@@ -360,16 +371,13 @@
     tg.ready();
     try { tg.expand(); } catch(e){}
     try { tg.setHeaderColor('#A0DDE6'); } catch(e){}
-    try { tg.setBackgroundColor('#F6FBFD'); } catch(e){}
+    try { tg.setBackgroundColor('#f9fff7'); } catch(e){}
   }
 
   const initData = tg ? (tg.initData || "") : "";
 
   const els = {
     // header
-    hicon: document.getElementById("hicon"),
-    htitle: document.getElementById("htitle"),
-    subtitle: document.getElementById("subtitle"),
     toast: document.getElementById("toast"),
 
     // sheet
@@ -389,17 +397,8 @@
     screenPlants: document.getElementById("screenPlants"),
     screenNorms: document.getElementById("screenNorms"),
 
-    // today
-    stats: document.getElementById("stats"),
-    adviceBanner: document.getElementById("adviceBanner"),
-    list: document.getElementById("list"),
-    error: document.getElementById("error"),
-    barlinks: document.getElementById("barlinks"),
-    btnWater: document.getElementById("btnWater"),
-    btnSelectAll: document.getElementById("btnSelectAll"),
-    btnSelectNeed: document.getElementById("btnSelectNeed"),
-    btnClear: document.getElementById("btnClear"),
-    btnbar: document.getElementById("btnbar"),
+    // today    list: document.getElementById("list"),
+    error: document.getElementById("error"),    btnWater: document.getElementById("btnWater"),    btnbar: document.getElementById("btnbar"),
 
     // plants
     plantsActive: document.getElementById("plantsActive"),
@@ -415,9 +414,7 @@
   };
 
     // Feature flags
-  const FEATURE_ADVICE_BANNER = false; // hide "Совет" block in mini app (keep code)
-  if (els.adviceBanner) els.adviceBanner.style.display = FEATURE_ADVICE_BANNER ? "block" : "none";
-
+    
 
 const state = {
     screen: "today", // today|plants|norms
@@ -468,46 +465,13 @@ const state = {
     els.tabPlants?.classList.toggle("active", screen==="plants");
     els.tabNorms?.classList.toggle("active", screen==="norms");
 
-    // header
-    if (screen==="today"){ els.hicon.textContent="📅"; els.htitle.textContent="Сегодня"; }
-    if (screen==="plants"){ els.hicon.textContent="🪴"; els.htitle.textContent="Растения"; }
-    if (screen==="norms"){ els.hicon.textContent="💦"; els.htitle.textContent="Нормы"; }
-
     // bottom bar only on today
     els.btnbar.style.display = screen==="today" ? "block" : "none";
-
-    // subtitle
-    renderSubtitle();
 
     // lazy load
     if (screen==="plants" && state.plants.length===0) loadPlants();
     if (screen==="norms" && state.norms.length===0) loadNorms();
   }
-
-  function renderSubtitle(){
-  if (state.screen==="today"){
-    const total = state.items.length;
-    const sel = state.selected.size;
-    const c = statusCounts(state.items);
-    const action = c.overdue + c.due + c.unknown;
-
-    const f = state.filter==="all" ? "Все" :
-              state.filter==="overdue" ? "Просрочено" :
-              state.filter==="due" ? "Пора" : "Настроить";
-
-    els.subtitle.textContent = `Всего: ${total} · Действий: ${action} · Выбрано: ${sel} · Фильтр: ${f}`;
-    return;
-  }
-  if (state.screen==="plants"){
-    els.subtitle.textContent = state.plantsMode==="active" ? "Активные растения" : "Архивные растения";
-    return;
-  }
-  if (state.screen==="norms"){
-    els.subtitle.textContent = "Просмотр и настройка норм полива";
-    return;
-  }
-  els.subtitle.textContent = "";
-}
 
   function apiFetch(path, opts){
     opts = opts || {};
@@ -538,53 +502,8 @@ const state = {
     return c;
   }
 
-  function renderStats(){
-  if (!state.items.length){
-    els.stats.style.display="none";
-    els.stats.innerHTML="";
-    return;
-  }
-  const c = statusCounts(state.items);
-  const actions = c.overdue + c.due + c.unknown;
-  if (actions === 0) {
-    els.stats.style.display="none";
-    els.stats.innerHTML="";
-    return;
-  }
-
-  // Today is an "action" screen: list only what needs attention.
-  // We still show the count of "Ок" items, but we don't make it a filter.
-  const chips = [
-    {k:"all", label:"Все", cls:""},
-    {k:"overdue", label:`Просрочено: ${c.overdue}`, cls:"danger"},
-    {k:"due", label:`Пора: ${c.due}`, cls:"warn"},
-    {k:"unknown", label:`Настроить: ${c.unknown}`, cls:"neutral"},
-  ];
-
-  const okChip = `<span class="pill ok passive">Ок: ${c.ok}</span>`;
-
-  els.stats.innerHTML =
-    chips.map(ch=>{
-      const active = (state.filter===ch.k) ? "active" : "";
-      return `<button class="pill ${ch.cls} ${active}" data-filter="${ch.k}">${ch.label}</button>`;
-    }).join("") + okChip;
-
-  els.stats.style.display="flex";
-
-  // bind
-  els.stats.querySelectorAll("[data-filter]").forEach(btn=>{
-    btn.addEventListener("click", ()=>{
-      state.filter = btn.getAttribute("data-filter") || "all";
-      renderToday();
-    });
-  });
-}
-
   function renderToday(){
-    clearError(els.error);
-    renderStats();
-
-        const items = state.items.filter(it => {
+    clearError(els.error);const items = state.items.filter(it => {
       const st = (it.status || "unknown");
       if (state.filter==="all") return (st==="overdue" || st==="due" || st==="unknown");
       return st===state.filter;
@@ -592,9 +511,9 @@ const state = {
 
         if (!items.length){
       if (state.filter==="all"){
-        els.list.innerHTML = `<div class="empty">Сегодня всё ок 🌿</div>`;
+        els.list.innerHTML = `<div class="empty">🪴 Сегодня все ок</div>`;
       } else {
-        els.list.innerHTML = `<div class="empty">По фильтру ничего нет.</div>`;
+        els.list.innerHTML = `<div class="empty">Сегодня все ок</div>`;
       }
     } else {
       els.list.innerHTML = items.map(it=>{
@@ -602,10 +521,10 @@ const state = {
         const status = it.status || "unknown";
         const badgeText = status==="overdue" ? "Просрочено" :
                           status==="due" ? "Пора" :
-                          status==="ok" ? (it.due_in_days!=null ? `Через ${it.due_in_days}д` : "Ок") :
+                          status==="ok" ? (it.due_in_days!=null ? `Через ${it.due_in_days} дней` : "Ок") :
                           "Настроить";
-        const meta1 = it.days_since_last_watering==null ? "Полив: нет данных" : `Полив: ${it.days_since_last_watering}д назад`;
-        const meta2 = it.norm_days==null ? "норма: —" : `норма: ${it.norm_days}д`;
+        const meta1 = it.days_since_last_watering==null ? "Полив: нет данных" : `Полив: ${it.days_since_last_watering} дней назад`;
+        const meta2 = it.norm_days==null ? "норма: —" : `норма: ${it.norm_days} дней`;
         return `
           <button class="card ${checked ? "selected" : ""}" data-id="${it.id}">
             <div class="top">
@@ -628,37 +547,25 @@ const state = {
         renderToday();
         updateButtons();
       });
-    });
-
-    renderSubtitle();
-    updateButtons();
+    });    updateButtons();
   }
 
   function updateButtons(){
     const c = statusCounts(state.items);
     const action = c.overdue + c.due + c.unknown;
-    const noActions = action===0;
-
     const any = state.selected.size>0;
     const disabledGlobal = state.loading || state.saving || state.items.length===0;
 
-    // bottom quick-select links
-    if (els.barlinks) {
-      els.barlinks.style.display = noActions ? "none" : "flex";
-    }
-    els.btnSelectAll.disabled = disabledGlobal || noActions;
-    els.btnSelectNeed.disabled = disabledGlobal || noActions;
-    els.btnClear.disabled = disabledGlobal || noActions || !any;
-
     // main action button
-    if (noActions) {
+    if (action === 0) {
       els.btnWater.classList.add("inactive");
-      els.btnWater.disabled = false; // looks inactive, но не "серый disabled"
+      els.btnWater.disabled = false; // выглядит неактивной
     } else {
       els.btnWater.classList.remove("inactive");
       els.btnWater.disabled = disabledGlobal || !any;
     }
   }
+
 
   async function loadToday(){
     state.loading = true;
@@ -667,8 +574,7 @@ const state = {
     state.filter = "all";
     updateButtons();
     els.list.innerHTML = `<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>`;
-    els.stats.style.display="none";
-    renderSubtitle();
+    clearError(els.error);
 
     try{
       const data = await apiFetch("/api/today", {method:"GET"});
@@ -680,7 +586,6 @@ const state = {
       showError(els.error, e && e.message ? e.message : "Ошибка загрузки");
       els.list.innerHTML = `<div class="empty">Не удалось загрузить данные.</div>`;
       updateButtons();
-      renderSubtitle();
     }
   }
 
@@ -704,26 +609,7 @@ const state = {
     }
   }
 
-  function selectAllToday(){
-    // только actionable (пора/просрочено/настроить), без "Ок"
-    state.items.forEach(it=>{
-      const st = (it.status || "unknown");
-      if (st==="overdue" || st==="due" || st==="unknown") state.selected.add(it.id);
-    });
-    renderToday();
-  }
-  function selectNeedToday(){
-    state.items.forEach(it=>{
-      const s = it.status || "unknown";
-      if (s==="due" || s==="overdue") state.selected.add(it.id);
-    });
-    renderToday();
-  }
-  function clearSelection(){
-    state.selected.clear();
-    renderToday();
-  }
-
+      
   // -------- PLANTS --------
   function renderPlants(){
     clearError(els.plantsError);
@@ -738,16 +624,13 @@ const state = {
     }
 
     els.plantsList.innerHTML = state.plants.map(p=>{
-      const norm = p.water_every_days==null ? "норма: —" : `норма: ${p.water_every_days}д`;
-      const lw = p.last_watered_at ? `посл.полив: ${formatDate(p.last_watered_at)}` : "посл.полив: —";
+      const norm = p.water_every_days==null ? "норма: —" : `норма: ${p.water_every_days} дней`;
+      const lw = p.last_watered_at ? `последний полив: ${formatDate(p.last_watered_at)}` : "последний полив: —";
       return `
         <div class="card plantcard" data-id="${p.id}">
           <div class="meta" style="flex:1;min-width:0">
-            <div class="top" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
-              <div class="title">${escapeHtml(p.name || "")}</div>
-              <span class="tag unknown" style="background:#F8FAFC">${norm}</span>
-            </div>
-            <div class="small">${lw}</div>
+            <div class="title">${escapeHtml(p.name || "")}</div>
+            ${daysLeftText(p) ? `<div class="row" style="justify-content:flex-start;margin-top:10px"><span class="tag unknown" style="background:#F8FAFC">${escapeHtml(daysLeftText(p))}</span></div>` : ``}
           </div>
           <div class="chev">›</div>
         </div>
@@ -770,8 +653,8 @@ const state = {
     state.sheetPlantId = id;
 
     els.sheetTitle.textContent = p.name || "Растение";
-    const norm = p.water_every_days==null ? "норма: —" : `норма: ${p.water_every_days}д`;
-    const lw = p.last_watered_at ? `посл.полив: ${formatDate(p.last_watered_at)}` : "посл.полив: —";
+    const norm = p.water_every_days==null ? "норма: —" : `норма: ${p.water_every_days} дней`;
+    const lw = p.last_watered_at ? `последний полив: ${formatDate(p.last_watered_at)}` : "последний полив: —";
     els.sheetMeta.innerHTML = `<span>${norm}</span><span class="dot">•</span><span>${lw}</span>`;
 
     const isActive = state.plantsMode==="active";
@@ -864,9 +747,7 @@ const state = {
       state.plantsLoading = false;
       showError(els.plantsError, e && e.message ? e.message : "Ошибка загрузки");
       renderPlants();
-    }
-    renderSubtitle();
-  }
+    }  }
 
   async function addPlant(){
     const name = prompt("Название растения:");
@@ -897,7 +778,7 @@ const state = {
         <div class="card" style="cursor:default">
           <div class="top">
             <div class="name">${escapeHtml(p.name || "")}</div>
-            <span class="badge ok">${p.water_every_days}д</span>
+            <span class="badge ok">${p.water_every_days} дней</span>
           </div>
           <div class="actions" style="margin-top:10px">
             <button class="btn2" data-act="edit" data-id="${p.id}">✏️Изменить</button>
@@ -948,11 +829,26 @@ const state = {
       state.normsLoading = false;
       showError(els.normsError, e && e.message ? e.message : "Ошибка загрузки");
       renderNorms();
-    }
-    renderSubtitle();
+    }  }
+
+  
+  // helpers
+  function daysLeftText(p){
+    try{
+      const norm = p && p.water_every_days!=null ? Number(p.water_every_days) : null;
+      const lastIso = p && p.last_watered_at ? p.last_watered_at : null;
+      if (norm==null || !lastIso) return null;
+      const last = new Date(lastIso);
+      if (isNaN(last.getTime())) return null;
+      const now = new Date();
+      const ms = now.getTime() - last.getTime();
+      const daysSince = Math.floor(ms / (1000*60*60*24));
+      const left = norm - daysSince;
+      if (left >= 0) return `до полива — ${left} дней`;
+      return `просрочено — ${Math.abs(left)} дней`;
+    }catch(e){ return null; }
   }
 
-  // helpers
   function escapeHtml(str){
     return String(str||"").replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
   }
@@ -972,12 +868,7 @@ const state = {
   els.tabPlants.addEventListener("click", ()=>setScreen("plants"));
   if (els.tabNorms) els.tabNorms.addEventListener("click", ()=>setScreen("norms"));
 
-  els.btnWater.addEventListener("click", markWatered);
-  els.btnSelectAll.addEventListener("click", selectAllToday);
-  els.btnSelectNeed.addEventListener("click", selectNeedToday);
-  els.btnClear.addEventListener("click", clearSelection);
-
-  els.plantsActive.addEventListener("click", ()=>{
+  els.btnWater.addEventListener("click", markWatered);  els.plantsActive.addEventListener("click", ()=>{
     state.plantsMode="active";
     els.plantsActive.classList.add("active");
     els.plantsArchived.classList.remove("active");
