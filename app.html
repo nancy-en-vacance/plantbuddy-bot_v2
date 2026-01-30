@@ -245,7 +245,7 @@
 
     .sheetcard{
       width:min(520px, calc(100vw - 32px));
-      margin:2 auto;
+      margin:0 auto;
       background:var(--card);
       border:1px solid var(--border);
       border-radius:22px;
@@ -547,7 +547,7 @@ const state = {
               <div class="row" style="justify-content:flex-start;margin-top:10px">
                 <span class="tag ${status}">${badgeText}</span>
               </div>
-              <div class="miniLine">${meta1}<span class="dot">•</span>${meta2}</div>
+              <div class="miniLine">${meta1} <span class="dot">•</span> ${meta2}</div>
             </div>
             <div class="selMark">${checked ? "✓" : ""}</div>
           </button>
