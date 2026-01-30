@@ -68,6 +68,14 @@
     /* List */
     .list{margin-top:16px;display:flex;flex-direction:column;gap:12px;}
 
+    .todayAction{margin-top:16px;}
+    .todaycard{width:100%;text-align:left;}
+    .todaycard .miniLine{margin-top:10px;color:var(--muted);font-size:13px;line-height:1.35;}
+    .todaycard.selected{border-color:var(--accent2);box-shadow:0 10px 28px rgba(92,148,110,.20);background:#F4FFF8;}
+    .selMark{margin-left:auto;min-width:26px;height:26px;border-radius:999px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);font-weight:900;}
+    .todaycard.selected .selMark{border-color:var(--accent2);color:var(--accent2);background:#EAF6EF;}
+
+
     .card{
       display:flex;gap:12px;align-items:flex-start;
       padding:14px;
@@ -177,8 +185,6 @@
     .btn:disabled{opacity:.55;box-shadow:none;cursor:default;}
 
     .empty{display:flex;align-items:center;justify-content:center;min-height:50vh;font-weight:600;font-size:18px;color:#2f2f2f}
-.emptyBox{display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center}
-.emptyImg{width:180px;max-width:70vw;height:auto;display:block}
 
     .skeleton{
       height:74px;
@@ -518,9 +524,9 @@ const state = {
 
         if (!items.length){
       if (state.filter==="all"){
-        els.list.innerHTML = `<div class="empty"><div class="emptyBox"><img class="emptyImg" src="/assets/all-set.png?v=2" alt="All set" /><div>All set for today!</div></div></div>`;
+        els.list.innerHTML = `<div class="empty">All set for today!</div>`;
       } else {
-        els.list.innerHTML = `<div class="empty"><div class="emptyBox"><img class="emptyImg" src="/assets/all-set.png?v=2" alt="All set" /><div>All set for today!</div></div></div>`;
+        els.list.innerHTML = `<div class="empty">All set for today!</div>`;
       }
     } else {
       els.list.innerHTML = items.map(it=>{
@@ -533,12 +539,15 @@ const state = {
         const meta1 = it.days_since_last_watering==null ? "Watered: no data" : `Watered: ${it.days_since_last_watering} days ago`;
         const meta2 = it.norm_days==null ? "norm: —" : `norm: ${it.norm_days} days`;
         return `
-          <button class="card ${checked ? "selected" : ""}" data-id="${it.id}">
-            <div class="top">
-              <div class="name">${escapeHtml(it.name || "")}</div>
-              <span class="badge ${status}">${badgeText}</span>
+          <button class="card todaycard ${checked ? "selected" : ""}" data-id="${it.id}">
+            <div class="meta">
+              <div class="title">${escapeHtml(it.name || "")}</div>
+              <div class="row" style="justify-content:flex-start;margin-top:10px">
+                <span class="tag ${status}">${badgeText}</span>
+              </div>
+              <div class="miniLine">${meta1}<span class="dot">•</span>${meta2}</div>
             </div>
-            <div class="meta">${meta1}<span class="dot">•</span>${meta2}</div>
+            <div class="selMark">${checked ? "✓" : ""}</div>
           </button>
         `;
       }).join("");
@@ -687,7 +696,7 @@ const state = {
 
     if (isActive){
       actions.push(`<button class="actionbtn neutral" data-act="rename">✏️Rename</button>`);
-      actions.push(`<button class="actionbtn" data-act="norm">💧Change norm</button>`);
+      actions.push(`<button class="actionbtn" data-act="norm">💦Change norm</button>`);
       actions.push(`<button class="actionbtn danger" data-act="archive">🗄️Archive</button>`);
     } else {
       actions.push(`<button class="actionbtn accent" data-act="restore">↩️Restore</button>`);
