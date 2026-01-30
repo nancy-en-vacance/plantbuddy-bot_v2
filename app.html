@@ -185,6 +185,9 @@
     .btn:disabled{opacity:.55;box-shadow:none;cursor:default;}
 
     .empty{display:flex;align-items:center;justify-content:center;min-height:50vh;font-weight:600;font-size:18px;color:#2f2f2f}
+.emptyBox{display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center}
+.emptyImg{width:180px;max-width:70vw;height:auto;display:block}
+
 
     .skeleton{
       height:74px;
@@ -526,9 +529,9 @@ const state = {
 
         if (!items.length){
       if (state.filter==="all"){
-        els.list.innerHTML = `<div class="empty">All set for today!</div>`;
+        els.list.innerHTML = `<div class="empty"><div class="emptyBox"><img class="emptyImg" src="/assets/all-set.png?v=2" alt="All set" /><div>All set for today!</div></div></div>`;
       } else {
-        els.list.innerHTML = `<div class="empty">All set for today!</div>`;
+        els.list.innerHTML = `<div class="empty"><div class="emptyBox"><img class="emptyImg" src="/assets/all-set.png?v=2" alt="All set" /><div>All set for today!</div></div></div>`;
       }
     } else {
       els.list.innerHTML = items.map(it=>{
