@@ -880,8 +880,13 @@ const state = {
       const last = new Date(lastIso);
       if (isNaN(last.getTime())) return null;
       const now = new Date();
-      const ms = now.getTime() - last.getTime();
+
+      // Calendar logic: "a day passed" = local date changed
+      const lastDay = new Date(last.getFullYear(), last.getMonth(), last.getDate());
+      const nowDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const ms = nowDay.getTime() - lastDay.getTime();
       const daysSince = Math.floor(ms / (1000*60*60*24));
+
       const left = norm - daysSince;
       if (left >= 0) return `water in ${left} days`;
       return `overdue by ${Math.abs(left)} days`;
