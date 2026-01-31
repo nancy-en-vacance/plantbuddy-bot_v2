@@ -1,4 +1,3 @@
-
 def verify_telegram_init_data(init_data: str, bot_token: str) -> dict:
     """
     Verifies Telegram WebApp initData signature.
@@ -24,7 +23,7 @@ def verify_telegram_init_data(init_data: str, bot_token: str) -> dict:
 
     data_check_string = "\n".join(f"{k}={data[k]}" for k in sorted(data.keys()))
 
-        # Telegram WebApp secret: HMAC_SHA256(key="WebAppData", msg=bot_token)
+    # Telegram WebApp secret: HMAC_SHA256(key="WebAppData", msg=bot_token)
     secret_key = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
     computed_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
 
@@ -52,7 +51,8 @@ import hmac
 import hashlib
 from pathlib import Path
 from urllib.parse import parse_qsl
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -66,6 +66,9 @@ import storage  # existing storage.py
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 BASE_URL = os.getenv("BASE_URL")
+
+# User-facing calendar logic uses local day boundaries
+TZ = ZoneInfo("Asia/Kolkata")
 
 
 # Inline WebApp opener (hard-reset friendly)
@@ -213,7 +216,8 @@ async def api_today(request: Request):
     """
     user_id = get_user_id_from_request(request)
 
-    now = datetime.now(timezone.utc)
+    now_local = datetime.now(TZ)
+    today_local = now_local.date()
     items: list[dict] = []
 
     with storage.get_conn() as conn:
@@ -233,25 +237,29 @@ async def api_today(request: Request):
         # last_watered_at comes as datetime (usually tz-aware) or None
         last_iso = None
         days_since = None
+        last_local_date = None
         if isinstance(last, datetime):
             if last.tzinfo is None:
                 last = last.replace(tzinfo=timezone.utc)
             last_iso = last.astimezone(timezone.utc).isoformat()
-            days_since = (now - last).days
+            last_local = last.astimezone(TZ)
+            last_local_date = last_local.date()
+            days_since = (today_local - last_local_date).days
 
         status = "unknown"
         due_in = None
 
         if norm is not None:
-            # if never watered but norm exists -> due now
-            if days_since is None:
+            # Calendar logic: "a day passed" = local date changed
+            if days_since is None or last_local_date is None:
                 status = "due"
                 due_in = 0
             else:
-                due_in = int(norm) - int(days_since)
-                if due_in < 0:
+                due_date = last_local_date + timedelta(days=int(norm))
+                due_in = (due_date - today_local).days
+                if due_date < today_local:
                     status = "overdue"
-                elif due_in == 0:
+                elif due_date == today_local:
                     status = "due"
                 else:
                     status = "ok"
@@ -280,7 +288,7 @@ async def api_water(request: Request):
         raise HTTPException(status_code=400, detail="plant_ids must be a list")
 
     now = datetime.now(timezone.utc)
-    updates: Dict[int, datetime] = {}
+    updates: dict[int, datetime] = {}
     for pid in plant_ids:
         try:
             updates[int(pid)] = now
